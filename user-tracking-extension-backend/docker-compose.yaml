@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:17.4
+    restart: always
+    environment:
+      POSTGRES_USER: user_tracking
+      POSTGRES_PASSWORD: user_tracking
+      POSTGRES_DB: user_tracking
+    ports:
+      - 1234:5432
+    volumes:
+      - user-tracking-extension-backend_pgdata:/var/lib/postgresql/data
+
+volumes:
+  user-tracking-extension-backend_pgdata:

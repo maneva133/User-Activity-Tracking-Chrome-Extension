@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Website Time Tracking</title>
+    <script src="libs/chart.min.js"></script>
+    <script src="popup.js" defer></script>
+    <style>
+        body {
+            width: 400px;
+            padding: 15px;
+            font-family: Arial, sans-serif;
+        }
+        .stat-box {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .stat-label {
+            font-weight: bold;
+            color: #666;
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            display: none;
+        }
+        .chart-container {
+            margin-top: 20px;
+            height: 300px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Current Site Time Spent</h2>
+    <div class="stat-box">
+        <div class="stat-label">Today:</div>
+        <div id="daily">Loading...</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-label">This Week:</div>
+        <div id="weekly">Loading...</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-label">This Month:</div>
+        <div id="monthly">Loading...</div>
+    </div>
+
+    <div id="timeWarning" class="warning">
+        Warning: You've spent more than 5 hours on this site today!
+    </div>
+
+    <h2>All Sites Usage Today</h2>
+    <div class="chart-container">
+        <canvas id="usageChart" width="600" height="400"></canvas>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
