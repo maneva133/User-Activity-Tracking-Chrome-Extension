@@ -4,7 +4,7 @@
 It was mainly built because I realized I spend too much time on my PC — this tool reminds me to take breaks and helps me manage my time better.
 
 Built using:
-- ⚛️ **JavaScript** for the frontend
+- **JavaScript** for the frontend
 - 🌱 **Spring Boot** for backend integration
 - 📈 **Chart.js** for rich data visualizations
 
