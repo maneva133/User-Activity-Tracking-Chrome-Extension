@@ -4,7 +4,7 @@
 It was mainly built because I realized I spend too much time on my PC — this tool reminds me to take breaks and helps me manage my time better.
 
 Built using:
-- ⚛️ **React** for the frontend
+- ⚛️ **JavaScript** for the frontend
 - 🌱 **Spring Boot** for backend integration
 - 📈 **Chart.js** for rich data visualizations
 
@@ -24,6 +24,19 @@ Built using:
 - 💡 **Focus-Friendly UI**  
   Minimal and distraction-free design that keeps you focused on your productivity.
 
+
+---
+
+## Setup
+
+1. Load the extension in Chrome:
+   - Open Chrome and go to `chrome://extensions/`
+   - Enable "Developer mode"
+   - Click "Load unpacked" and select this directory
+
+2. Configure backend URL:
+   - The extension expects the backend to run at `http://localhost:8080`
+   - If your backend runs on a different URL, update it in `background.js`
 
 ---
 
