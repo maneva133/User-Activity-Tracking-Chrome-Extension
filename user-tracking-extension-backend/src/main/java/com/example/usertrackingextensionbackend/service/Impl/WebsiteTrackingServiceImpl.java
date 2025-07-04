@@ -22,10 +22,11 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
 
     @Override
     @Transactional
-    public WebsiteTracking saveTracking(String domain, Long timeSpentSeconds) {
-        WebsiteTracking tracking = repository.findByDomain(domain)
+    public WebsiteTracking saveTracking(String deviceId, String domain, Long timeSpentSeconds) {
+        WebsiteTracking tracking = repository.findByDomainAndDeviceId(domain, deviceId)
                 .orElseGet(() -> {
                     WebsiteTracking newTracking = new WebsiteTracking();
+                    newTracking.setDeviceId(deviceId);
                     newTracking.setDomain(domain);
                     newTracking.setDailyTimeSpentSeconds(0L);
                     newTracking.setWeeklyTimeSpentSeconds(0L);
@@ -48,6 +49,11 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
         return repository.findByDomain(domain)
                 .orElseThrow(() -> new RuntimeException("Tracking not found for domain: " + domain));
     }
+    @Override
+    public WebsiteTracking getTrackingByDeviceIdAndDomain(String deviceId, String domain) {
+        return repository.findByDomainAndDeviceId(domain, deviceId)
+                .orElseThrow(() -> new RuntimeException("Tracking not found for domain: " + domain + " and deviceId: " + deviceId));
+    }
 
     @Override
     public List<WebsiteTracking> getTrackingBetweenDates(LocalDateTime start, LocalDateTime end) {
@@ -65,8 +71,8 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
     }
 
     @Override
-    public TrackingStatistics getStatistics(String domain) {
-        WebsiteTracking tracking = getTrackingByDomain(domain);
+    public TrackingStatistics getStatistics(String deviceId, String domain) {
+        WebsiteTracking tracking = getTrackingByDeviceIdAndDomain(deviceId, domain);
         checkAndResetTimers(tracking);
         repository.save(tracking);
         
@@ -95,6 +101,22 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
     public List<TrackingStatistics> getDailyStatisticsForAllDomains() {
 
         List<WebsiteTracking> allTracking = repository.findAll();
+        return allTracking.stream()
+                .map(tracking -> {
+                    checkAndResetTimers(tracking);
+                    return new TrackingStatistics(
+                            tracking.getDomain(),
+                            tracking.getDailyTimeSpentSeconds(),
+                            tracking.getWeeklyTimeSpentSeconds(),
+                            tracking.getMonthlyTimeSpentSeconds()
+                    );
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<TrackingStatistics> getDailyStatisticsForDevice(String deviceId) {
+        List<WebsiteTracking> allTracking = repository.findAllByDeviceId(deviceId);
         return allTracking.stream()
                 .map(tracking -> {
                     checkAndResetTimers(tracking);

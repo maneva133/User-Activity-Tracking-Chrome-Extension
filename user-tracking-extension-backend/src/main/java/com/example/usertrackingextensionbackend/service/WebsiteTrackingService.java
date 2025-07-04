@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface WebsiteTrackingService {
-    WebsiteTracking saveTracking(String domain, Long timeSpentSeconds);
+    WebsiteTracking saveTracking(String deviceId, String domain, Long timeSpentSeconds);
 
     List<WebsiteTracking> getTrackingBetweenDates(LocalDateTime start, LocalDateTime end);
 
@@ -17,9 +17,13 @@ public interface WebsiteTrackingService {
 
     void deleteById(Long id);
 
-    TrackingStatistics getStatistics(String domain);
+    TrackingStatistics getStatistics(String deviceId, String domain);
+
+    WebsiteTracking getTrackingByDeviceIdAndDomain(String deviceId, String domain) ;
 
     void checkAndResetTimers();
 
     List<TrackingStatistics> getDailyStatisticsForAllDomains();
+
+    List<TrackingStatistics> getDailyStatisticsForDevice(String deviceId);
 }

@@ -21,9 +21,23 @@ public class WebsiteTrackingController {
     private final WebsiteTrackingServiceImpl service;
 
     @PostMapping
-    public ResponseEntity<WebsiteTracking> saveTracking(@RequestBody TrackingRequest request) {
-        return ResponseEntity.ok(service.saveTracking(request.getDomain(), request.getTimeSpentSeconds()));
+    public ResponseEntity<TrackingRequest> saveTracking(@RequestBody TrackingRequest request) {
+        String deviceId = request.getDeviceId();
+
+        if (deviceId == null || deviceId.isBlank()) {
+            deviceId = java.util.UUID.randomUUID().toString();
+        }
+
+        WebsiteTracking saved = service.saveTracking(deviceId, request.getDomain(), request.getTimeSpentSeconds());
+
+        TrackingRequest response = new TrackingRequest();
+        response.setDeviceId(deviceId);
+        response.setDomain(saved.getDomain());
+        response.setTimeSpentSeconds(request.getTimeSpentSeconds());
+
+        return ResponseEntity.ok(response);
     }
+
 
     @GetMapping("/domain/{domain}")
     public ResponseEntity<WebsiteTracking> getTrackingByDomain(@PathVariable String domain) {
@@ -31,14 +45,24 @@ public class WebsiteTrackingController {
     }
 
     @GetMapping("/statistics/{domain}")
-    public ResponseEntity<TrackingStatistics> getStatistics(@PathVariable String domain) {
-        return ResponseEntity.ok(service.getStatistics(domain));
+    public ResponseEntity<TrackingStatistics> getStatistics(
+            @PathVariable String domain,
+            @RequestParam(required = true) String deviceId) {
+
+        if (deviceId == null || deviceId.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        return ResponseEntity.ok(service.getStatistics(deviceId, domain));
     }
 
+
+
     @GetMapping("/statistics/daily/all")
-    public ResponseEntity<List<TrackingStatistics>> getAllDailyStatistics() {
-        return ResponseEntity.ok(service.getDailyStatisticsForAllDomains());
+    public ResponseEntity<List<TrackingStatistics>> getAllDailyStatisticsForDevice(@RequestParam String deviceId) {
+        return ResponseEntity.ok(service.getDailyStatisticsForDevice(deviceId));
     }
+
 
     @GetMapping("/date-range")
     public ResponseEntity<List<WebsiteTracking>> getTrackingBetweenDates(
@@ -53,7 +77,7 @@ public class WebsiteTrackingController {
     }
 
     @DeleteMapping("/delete/{id}")
-    public ResponseEntity<String> deleteById(@PathVariable Long id){
+    public ResponseEntity<String> deleteById(@PathVariable Long id) {
         service.deleteById(id);
         return ResponseEntity.ok("Deleted successfully");
     }

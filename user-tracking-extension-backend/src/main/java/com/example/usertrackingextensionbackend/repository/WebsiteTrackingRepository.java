@@ -11,7 +11,7 @@ import java.util.Optional;
 @Repository
 public interface WebsiteTrackingRepository extends JpaRepository<WebsiteTracking, Long> {
     Optional<WebsiteTracking> findByDomain(String domain);
+    Optional<WebsiteTracking> findByDomainAndDeviceId(String domain, String deviceId);
     List<WebsiteTracking> findByLastUpdatedBetween(LocalDateTime start, LocalDateTime end);
-
-
+    List<WebsiteTracking> findAllByDeviceId(String deviceId);
 }

@@ -8,7 +8,9 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "website_tracking")
+@Table(name = "website_tracking", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"deviceId", "domain"})
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -42,6 +44,9 @@ public class WebsiteTracking {
     @Column(nullable = false)
     private LocalDateTime lastMonthlyReset;
 
+    @Column(nullable = false)
+    private String deviceId;
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
@@ -65,6 +70,13 @@ public class WebsiteTracking {
 
     public void setDomain(String domain) {
         this.domain = domain;
+    }
+
+    public String getDeviceId() {
+        return deviceId;
+    }
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
     }
 
     public Long getDailyTimeSpentSeconds() {

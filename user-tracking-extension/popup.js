@@ -13,7 +13,6 @@ function secondsToHours(seconds) {
 }
 
 
-// UI functions
 function showError(message, error) {
     console.error('Error details:', error);
     document.getElementById('daily').textContent = message;
@@ -24,7 +23,7 @@ function showError(message, error) {
 
 function checkTimeWarning(seconds) {
     const warningElement = document.getElementById('timeWarning');
-    if (seconds > FIVE_HOURS_IN_SECONDS) { // 5 hours in seconds
+    if (seconds > FIVE_HOURS_IN_SECONDS) {
         warningElement.style.display = 'block';
     } else {
         warningElement.style.display = 'none';
@@ -146,22 +145,24 @@ function updateDisplayedTime() {
 
 // popup
 chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
+    const stored = await chrome.storage.local.get('deviceId');
+    let deviceId = stored.deviceId;
     if (tabs[0] && tabs[0].url) {
         currentDomain = new URL(tabs[0].url).hostname;
         try {
             console.log('Fetching statistics for domain:', currentDomain);
-            const response = await fetch(`http://localhost:8080/api/tracking/statistics/${currentDomain}`);
-            
+            const response = await fetch(`http://localhost:8080/api/tracking/statistics/${currentDomain}?deviceId=${deviceId}`);
+
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(`Server error (${response.status}): ${errorText}`);
             }
-            
+
             const stats = await response.json();
             console.log('Received statistics:', stats);
-            
+
             currentStats = stats;
-            
+
             document.getElementById('daily').textContent = formatTime(stats.dailyTimeSpentSeconds || 0);
             document.getElementById('weekly').textContent = formatTime(stats.weeklyTimeSpentSeconds || 0);
             document.getElementById('monthly').textContent = formatTime(stats.monthlyTimeSpentSeconds || 0);
@@ -170,7 +171,7 @@ chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
 
             updateInterval = setInterval(updateDisplayedTime, 1000);
 
-            const allStatsResponse = await fetch('http://localhost:8080/api/tracking/statistics/daily/all');
+            const allStatsResponse = await fetch(`http://localhost:8080/api/tracking/statistics/daily/all?deviceId=${deviceId}`);
             if (!allStatsResponse.ok) {
                 throw new Error(`Error fetching all statistics: ${allStatsResponse.status}`);
             }
