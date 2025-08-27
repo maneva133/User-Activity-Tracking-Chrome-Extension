@@ -9,5 +9,4 @@ public class UserTrackingExtensionBackendApplication {
     public static void main(String[] args) {
         SpringApplication.run(UserTrackingExtensionBackendApplication.class, args);
     }
-
 }

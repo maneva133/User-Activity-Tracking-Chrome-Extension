@@ -129,6 +129,11 @@ let currentStats = {
     monthlyTimeSpentSeconds: 0
 };
 
+// domain utils
+function normalizeDomain(hostname) {
+    return hostname.replace(/^www\./, '');
+}
+
 // TIMER
 function updateDisplayedTime() {
     currentStats.dailyTimeSpentSeconds++;
@@ -148,7 +153,34 @@ chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
     const stored = await chrome.storage.local.get('deviceId');
     let deviceId = stored.deviceId;
     if (tabs[0] && tabs[0].url) {
-        currentDomain = new URL(tabs[0].url).hostname;
+        currentDomain = normalizeDomain(new URL(tabs[0].url).hostname);
+        
+        // Skip tracking for chrome://, chrome-extension://, and other browser-internal URLs
+        if (tabs[0].url.startsWith('chrome://') || 
+            tabs[0].url.startsWith('chrome-extension://') || 
+            tabs[0].url.startsWith('about:') ||
+            tabs[0].url.startsWith('moz-extension://') ||
+            tabs[0].url.startsWith('edge://')) {
+            
+            document.getElementById('daily').textContent = 'Not tracked';
+            document.getElementById('weekly').textContent = 'Not tracked';
+            document.getElementById('monthly').textContent = 'Not tracked';
+            document.getElementById('current-session').textContent = 'Not tracked';
+            
+            // Still try to load the chart with other domains
+            try {
+                const allStatsResponse = await fetch(`http://localhost:8080/api/tracking/statistics/daily/all?deviceId=${deviceId}`);
+                if (allStatsResponse.ok) {
+                    const allStats = await allStatsResponse.json();
+                    console.log(allStats);
+                    updateChart(allStats);
+                }
+            } catch (error) {
+                console.log('Could not load chart data:', error);
+            }
+            return;
+        }
+        
         try {
             console.log('Fetching statistics for domain:', currentDomain);
             const response = await fetch(`http://localhost:8080/api/tracking/statistics/${currentDomain}?deviceId=${deviceId}`);
@@ -188,6 +220,62 @@ chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
         }
     } else {
         showError('No active tab found');
+    }
+});
+
+// AI Analysis functionality
+async function analyzeUsage() {
+    const stored = await chrome.storage.local.get('deviceId');
+    let deviceId = stored.deviceId;
+    
+    if (!deviceId) {
+        alert('No device ID found. Please refresh the extension.');
+        return;
+    }
+    
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const aiAnalysis = document.getElementById('aiAnalysis');
+    
+    // Show loading state
+    analyzeBtn.textContent = 'Analyzing...';
+    analyzeBtn.disabled = true;
+    aiAnalysis.style.display = 'none';
+    
+    try {
+        const response = await fetch(`http://localhost:8080/api/tracking/analyze/daily?deviceId=${deviceId}`);
+        
+        if (!response.ok) {
+            throw new Error(`Server error (${response.status}): ${await response.text()}`);
+        }
+        
+        const analysis = await response.json();
+        
+        // Display the analysis
+        document.getElementById('brainrotTime').textContent = formatTime(analysis.brainrotTime || 0);
+        document.getElementById('studyTime').textContent = formatTime(analysis.studyTime || 0);
+        document.getElementById('entertainmentTime').textContent = formatTime(analysis.entertainmentTime || 0);
+        document.getElementById('productivityTime').textContent = formatTime(analysis.productivityTime || 0);
+        document.getElementById('socialMediaTime').textContent = formatTime(analysis.socialMediaTime || 0);
+        document.getElementById('analysisText').textContent = analysis.analysis || 'No analysis available';
+        document.getElementById('recommendationText').textContent = analysis.recommendation || 'No recommendation available';
+        
+        aiAnalysis.style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error analyzing usage:', error);
+        alert('Error analyzing usage. Please try again later.');
+    } finally {
+        // Reset button state
+        analyzeBtn.textContent = 'Analyze My Usage';
+        analyzeBtn.disabled = false;
+    }
+}
+
+// Add event listener for analyze button
+document.addEventListener('DOMContentLoaded', () => {
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    if (analyzeBtn) {
+        analyzeBtn.addEventListener('click', analyzeUsage);
     }
 });
 

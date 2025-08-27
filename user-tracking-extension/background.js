@@ -88,7 +88,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     await stopTracking();
 
     chrome.tabs.get(activeInfo.tabId, (tab) => {
-        if (chrome.runtime.lastError || !tab.url || !tab.url.startsWith('http')) return;
+        if (chrome.runtime.lastError || !tab.url) return;
 
         const domain = extractDomainFromUrl(tab.url);
         if (domain) startTracking(domain);
@@ -96,7 +96,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    if (changeInfo.status === 'complete' && tab.active && tab.url && tab.url.startsWith('http')) {
+    if (changeInfo.status === 'complete' && tab.active && tab.url) {
         await stopTracking();
 
         const domain = extractDomainFromUrl(tab.url);
@@ -112,7 +112,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
             if (chrome.runtime.lastError || !tabs.length) return;
 
             const tab = tabs[0];
-            if (tab.url && tab.url.startsWith('http')) {
+            if (tab.url) {
                 const domain = extractDomainFromUrl(tab.url);
                 if (domain) startTracking(domain);
             }
@@ -152,6 +152,14 @@ function normalizeDomain(hostname) {
 
 function extractDomainFromUrl(url) {
     try {
+        // Skip browser-internal URLs
+        if (url.startsWith('chrome://') || 
+            url.startsWith('chrome-extension://') || 
+            url.startsWith('about:') ||
+            url.startsWith('moz-extension://') ||
+            url.startsWith('edge://')) {
+            return null;
+        }
         return normalizeDomain(new URL(url).hostname);
     } catch (e) {
         return null;

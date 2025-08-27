@@ -23,6 +23,9 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
     @Override
     @Transactional
     public WebsiteTracking saveTracking(String deviceId, String domain, Long timeSpentSeconds) {
+        if (domain == null || domain.isBlank()) {
+            throw new IllegalArgumentException("Domain must not be null or blank");
+        }
         WebsiteTracking tracking = repository.findByDomainAndDeviceId(domain, deviceId)
                 .orElseGet(() -> {
                     WebsiteTracking newTracking = new WebsiteTracking();
@@ -72,9 +75,20 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
 
     @Override
     public TrackingStatistics getStatistics(String deviceId, String domain) {
-        WebsiteTracking tracking = getTrackingByDeviceIdAndDomain(deviceId, domain);
+        WebsiteTracking tracking = repository.findByDomainAndDeviceId(domain, deviceId)
+                .orElseGet(() -> {
+                    WebsiteTracking newTracking = new WebsiteTracking();
+                    newTracking.setDeviceId(deviceId);
+                    newTracking.setDomain(domain);
+                    newTracking.setDailyTimeSpentSeconds(0L);
+                    newTracking.setWeeklyTimeSpentSeconds(0L);
+                    newTracking.setMonthlyTimeSpentSeconds(0L);
+                    newTracking.setLastUpdated(LocalDateTime.now());
+                    return repository.save(newTracking);
+                });
+        
         checkAndResetTimers(tracking);
-        repository.save(tracking);
+        tracking = repository.save(tracking);
         
         return new TrackingStatistics(
                 tracking.getDomain(),
@@ -93,7 +107,6 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
         for (WebsiteTracking tracking : allTracking) {
             checkAndResetTimers(tracking);
         }
-        
         repository.saveAll(allTracking);
     }
 
@@ -120,6 +133,7 @@ public class WebsiteTrackingServiceImpl implements WebsiteTrackingService {
         return allTracking.stream()
                 .map(tracking -> {
                     checkAndResetTimers(tracking);
+                    repository.save(tracking);
                     return new TrackingStatistics(
                             tracking.getDomain(),
                             tracking.getDailyTimeSpentSeconds(),
