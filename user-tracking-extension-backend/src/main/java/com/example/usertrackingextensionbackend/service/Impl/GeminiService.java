@@ -23,8 +23,11 @@ public class GeminiService implements AIService {
     @Value("${gemini.api.key}")
     private String geminiApiKey;
 
-    @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent}")
+    @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/}")
     private String geminiApiUrl;
+
+    @Value("${gemini.model:gemini-1.5-flash}")
+    private String geminiModel;
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -87,6 +90,7 @@ public class GeminiService implements AIService {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("x-goog-api-key", geminiApiKey);
 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("contents", new Object[]{
@@ -99,16 +103,17 @@ public class GeminiService implements AIService {
                     "maxOutputTokens", 500
             ));
 
-            String url = geminiApiUrl + "?key=" + geminiApiKey;
+            String baseUrl = geminiApiUrl.endsWith("/") ? geminiApiUrl : geminiApiUrl + "/";
+            String url = baseUrl + geminiModel + ":generateContent";
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
-            log.info("Calling Gemini API with URL: {}", url);
-            log.info("Request body: {}", objectMapper.writeValueAsString(requestBody));
+            log.info("Calling Gemini API model {}", geminiModel);
+            log.debug("Gemini request body: {}", objectMapper.writeValueAsString(requestBody));
 
             ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
 
             log.info("Gemini API response status: {}", response.getStatusCode());
-            log.info("Gemini API response body: {}", response.getBody());
+            log.debug("Gemini API response body: {}", response.getBody());
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 return response.getBody();
@@ -124,7 +129,7 @@ public class GeminiService implements AIService {
 
     private OpenAIResponse parseGeminiResponse(String geminiResponse) {
         try {
-            log.info("Parsing Gemini response: {}", geminiResponse);
+            log.debug("Parsing Gemini response: {}", geminiResponse);
 
             JsonNode responseNode = objectMapper.readTree(geminiResponse);
 
@@ -145,7 +150,7 @@ public class GeminiService implements AIService {
             }
 
             String content = candidate.get("content").get("parts").get(0).get("text").asText();
-            log.info("Extracted content from Gemini: {}", content);
+            log.debug("Extracted content from Gemini: {}", content);
 
             content = content.trim();
             if (content.startsWith("```json")) {
@@ -156,7 +161,7 @@ public class GeminiService implements AIService {
             }
             content = content.trim();
 
-            log.info("Cleaned content for JSON parsing: {}", content);
+            log.debug("Cleaned content for JSON parsing: {}", content);
 
             content = fixJsonContent(content);
 
@@ -172,7 +177,7 @@ public class GeminiService implements AIService {
                     analysisNode.get("recommendation").asText()
             );
         } catch (Exception e) {
-            log.error("Error parsing Gemini response: {}", geminiResponse, e);
+            log.error("Error parsing Gemini response", e);
             return createDefaultResponse();
         }
     }
@@ -188,7 +193,7 @@ public class GeminiService implements AIService {
                 "\"entertainmentTime\": $1");
         content = content.replaceAll("\"socialMediaTime\":\\s*([0-9]+)\\s*\\+\\s*([0-9]+)",
                 "\"socialMediaTime\": $1");
-        log.info("Fixed JSON content: {}", content);
+        log.debug("Fixed JSON content: {}", content);
         return content;
     }
 
