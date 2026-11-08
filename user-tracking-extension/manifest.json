@@ -3,7 +3,7 @@
   "name": "Website Time Tracker",
   "version": "1.0",
   "description": "Track time spent on each website",
-  "permissions": ["tabs", "storage", "alarms", "idle"],
+  "permissions": ["tabs", "storage", "alarms", "idle", "notifications"],
   "background": {
     "service_worker": "background.js"
   },
@@ -20,7 +20,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": ["http://localhost:8080/*"],
 
   "content_scripts": [
     {

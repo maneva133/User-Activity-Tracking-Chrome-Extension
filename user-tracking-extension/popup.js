@@ -1,5 +1,28 @@
 const FIVE_HOURS_IN_SECONDS = 18000;
 
+async function initializeReminderSettings() {
+    try {
+        const { reminderSettings = { strategy: 'FIXED', doNotDisturb: false } } = await chrome.storage.local.get('reminderSettings');
+        const strategy = document.getElementById('reminderStrategy');
+        const dnd = document.getElementById('doNotDisturb');
+        strategy.value = reminderSettings.strategy;
+        dnd.checked = reminderSettings.doNotDisturb;
+        const save = async () => {
+            try { await chrome.storage.local.set({ reminderSettings: { strategy: strategy.value, doNotDisturb: dnd.checked } }); }
+            catch (error) { setStatus('Could not save reminder settings.'); console.error(error); }
+        };
+        strategy.addEventListener('change', save);
+        dnd.addEventListener('change', save);
+    } catch (error) { setStatus('Could not load reminder settings.'); console.error(error); }
+}
+void initializeReminderSettings();
+
+const API_BASE = 'http://localhost:8080/api';
+function setStatus(message) {
+    const status = document.getElementById('analysisStatus');
+    if (status) status.textContent = message;
+}
+
 
 // utility functions
 function formatTime(seconds) {
@@ -18,15 +41,14 @@ function showError(message, error) {
     document.getElementById('daily').textContent = message;
     document.getElementById('weekly').textContent = message;
     document.getElementById('monthly').textContent = message;
-    document.getElementById('current-session').textContent = message;
 }
 
 function checkTimeWarning(seconds) {
     const warningElement = document.getElementById('timeWarning');
     if (seconds > FIVE_HOURS_IN_SECONDS) {
-        warningElement.style.display = 'block';
+        warningElement.hidden = false;
     } else {
-        warningElement.style.display = 'none';
+        warningElement.hidden = true;
     }
 }
 
@@ -40,40 +62,32 @@ function updateChart(dataArray) {
         usageChartInstance.destroy();
     }
 
-    const sorted = dataArray
+    const sorted = [...dataArray]
         .sort((a, b) => b.dailyTimeSpentSeconds - a.dailyTimeSpentSeconds)
         .slice(0, 5);
 
-    const labels = sorted.map(entry => entry.domain);
-    const dailyData = sorted.map(entry => secondsToHours(entry.dailyTimeSpentSeconds));
-    const weeklyData = sorted.map(entry => secondsToHours(entry.weeklyTimeSpentSeconds) / 7);
-    const monthlyData = sorted.map(entry => secondsToHours(entry.monthlyTimeSpentSeconds) / 30);
+    const labels = ['Today', 'This week (avg/day)', 'This month (avg/day)'];
+    const chartSummary = document.getElementById('chartSummary');
+    chartSummary.replaceChildren(...sorted.map(entry => {
+        const item = document.createElement('li');
+        item.textContent = `${entry.domain}: today ${formatTime(entry.dailyTimeSpentSeconds)}, this week ${formatTime(entry.weeklyTimeSpentSeconds)}, this month ${formatTime(entry.monthlyTimeSpentSeconds)}.`;
+        return item;
+    }));
+    const domainColors = ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c'];
 
     const chartData = {
         labels: labels,
-        datasets: [
-            {
-                label: 'Daily',
-                data: dailyData,
-                backgroundColor: 'rgba(23,171,255,0.55)',
-                borderColor: 'rgba(34,1,101,0.5)',
-                borderWidth: 1
-            },
-            {
-                label: 'Weekly',
-                data: weeklyData,
-                backgroundColor: 'rgba(0,40,128,0.48)',
-                borderColor: 'rgb(5,0,0)',
-                borderWidth: 1
-            },
-            {
-                label: 'Monthly',
-                data: monthlyData,
-                backgroundColor: 'rgba(5,147,26,0.54)',
-                borderColor: 'rgba(153, 102, 255, 1)',
-                borderWidth: 1
-            }
-        ]
+        datasets: sorted.map((entry, index) => ({
+            label: entry.domain,
+            data: [
+                secondsToHours(entry.dailyTimeSpentSeconds),
+                secondsToHours(entry.weeklyTimeSpentSeconds) / 7,
+                secondsToHours(entry.monthlyTimeSpentSeconds) / 30
+            ],
+            backgroundColor: domainColors[index],
+            borderColor: domainColors[index],
+            borderWidth: 1
+        }))
     };
 
     usageChartInstance = new Chart(ctx, {
@@ -87,7 +101,7 @@ function updateChart(dataArray) {
                     type: 'category',
                     title: {
                         display: true,
-                        text: 'Domain'
+                        text: 'Period'
                     },
                     ticks: {
                         maxRotation: 45,
@@ -99,20 +113,20 @@ function updateChart(dataArray) {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: 'Hours per Day (Average)'
+                        text: 'Hours'
                     }
                 }
             },
             plugins: {
                 title: {
                     display: true,
-                    text: 'Top 5 Sites Usage Statistics'
+                    text: 'Top 5 Sites by Usage'
                 },
                 tooltip: {
                     callbacks: {
                         label: function(context) {
                             const hours = context.parsed.y.toFixed(2);
-                            return `${context.dataset.label}: ${hours} hours/day`;
+                            return `${context.dataset.label}: ${hours} hours`;
                         }
                     }
                 }
@@ -121,42 +135,71 @@ function updateChart(dataArray) {
     });
 }
 
-let updateInterval;
 let currentDomain;
-let currentStats = {
-    dailyTimeSpentSeconds: 0,
-    weeklyTimeSpentSeconds: 0,
-    monthlyTimeSpentSeconds: 0
-};
+let usageSessions = [];
+let usageDeviceId;
+
+function localStartOfDay(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getUsageRanges(now = new Date()) {
+    const today = localStartOfDay(now);
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    const month = new Date(now.getFullYear(), now.getMonth(), 1);
+    const from = monday < month ? monday : month;
+    return { today, monday, month, from, now };
+}
+
+function summarizeSessions(sessions, ranges) {
+    const totals = new Map();
+    for (const session of sessions) {
+        const seconds = Number(session.durationSeconds) || 0;
+        if (seconds <= 0 || !session.domain) continue;
+        const item = totals.get(session.domain) || { domain: session.domain, dailyTimeSpentSeconds: 0, weeklyTimeSpentSeconds: 0, monthlyTimeSpentSeconds: 0 };
+        const end = new Date(session.endTs);
+        if (end >= ranges.today) item.dailyTimeSpentSeconds += seconds;
+        if (end >= ranges.monday) item.weeklyTimeSpentSeconds += seconds;
+        if (end >= ranges.month) item.monthlyTimeSpentSeconds += seconds;
+        totals.set(session.domain, item);
+    }
+    return [...totals.values()];
+}
+
+async function loadUsageSessions(deviceId, ranges) {
+    const url = new URL(`${API_BASE}/sessions`);
+    url.searchParams.set('deviceId', deviceId);
+    url.searchParams.set('from', ranges.from.toISOString());
+    url.searchParams.set('to', ranges.now.toISOString());
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Could not load sessions (${response.status}): ${await response.text()}`);
+    return response.json();
+}
 
 // domain utils
 function normalizeDomain(hostname) {
     return hostname.replace(/^www\./, '');
 }
 
-// TIMER
-function updateDisplayedTime() {
-    currentStats.dailyTimeSpentSeconds++;
-    currentStats.weeklyTimeSpentSeconds++;
-    currentStats.monthlyTimeSpentSeconds++;
-
-    document.getElementById('daily').textContent = formatTime(currentStats.dailyTimeSpentSeconds);
-    document.getElementById('weekly').textContent = formatTime(currentStats.weeklyTimeSpentSeconds);
-    document.getElementById('monthly').textContent = formatTime(currentStats.monthlyTimeSpentSeconds);
-
-    checkTimeWarning(currentStats.dailyTimeSpentSeconds);
-}
-
-
 // popup
-chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
+void (async () => {
+ try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const stored = await chrome.storage.local.get('deviceId');
-    let deviceId = stored.deviceId;
-    if (tabs[0] && tabs[0].url) {
-        currentDomain = normalizeDomain(new URL(tabs[0].url).hostname);
+    const deviceId = stored.deviceId || crypto.randomUUID();
+    if (!stored.deviceId) await chrome.storage.local.set({ deviceId });
+    usageDeviceId = deviceId;
+    const ranges = getUsageRanges();
+    usageSessions = await loadUsageSessions(deviceId, ranges);
+    const allStats = summarizeSessions(usageSessions, ranges);
+    updateChart(allStats);
+    if (tabs[0]?.url) {
+      try { currentDomain = normalizeDomain(new URL(tabs[0].url).hostname); }
+      catch { currentDomain = null; }
         
         // Skip tracking for chrome://, chrome-extension://, and other browser-internal URLs
-        if (tabs[0].url.startsWith('chrome://') || 
+        if (!currentDomain || tabs[0].url.startsWith('chrome://') ||
             tabs[0].url.startsWith('chrome-extension://') || 
             tabs[0].url.startsWith('about:') ||
             tabs[0].url.startsWith('moz-extension://') ||
@@ -165,51 +208,15 @@ chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
             document.getElementById('daily').textContent = 'Not tracked';
             document.getElementById('weekly').textContent = 'Not tracked';
             document.getElementById('monthly').textContent = 'Not tracked';
-            document.getElementById('current-session').textContent = 'Not tracked';
-            
-            // Still try to load the chart with other domains
-            try {
-                const allStatsResponse = await fetch(`http://localhost:8080/api/tracking/statistics/daily/all?deviceId=${deviceId}`);
-                if (allStatsResponse.ok) {
-                    const allStats = await allStatsResponse.json();
-                    console.log(allStats);
-                    updateChart(allStats);
-                }
-            } catch (error) {
-                console.log('Could not load chart data:', error);
-            }
             return;
         }
         
         try {
-            console.log('Fetching statistics for domain:', currentDomain);
-            const response = await fetch(`http://localhost:8080/api/tracking/statistics/${currentDomain}?deviceId=${deviceId}`);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Server error (${response.status}): ${errorText}`);
-            }
-
-            const stats = await response.json();
-            console.log('Received statistics:', stats);
-
-            currentStats = stats;
-
-            document.getElementById('daily').textContent = formatTime(stats.dailyTimeSpentSeconds || 0);
-            document.getElementById('weekly').textContent = formatTime(stats.weeklyTimeSpentSeconds || 0);
-            document.getElementById('monthly').textContent = formatTime(stats.monthlyTimeSpentSeconds || 0);
-
-            checkTimeWarning(stats.dailyTimeSpentSeconds || 0);
-
-            updateInterval = setInterval(updateDisplayedTime, 1000);
-
-            const allStatsResponse = await fetch(`http://localhost:8080/api/tracking/statistics/daily/all?deviceId=${deviceId}`);
-            if (!allStatsResponse.ok) {
-                throw new Error(`Error fetching all statistics: ${allStatsResponse.status}`);
-            }
-            const allStats = await allStatsResponse.json();
-            console.log(allStats);
-            updateChart(allStats);
+            const stats = allStats.find(entry => entry.domain === currentDomain) || { dailyTimeSpentSeconds: 0, weeklyTimeSpentSeconds: 0, monthlyTimeSpentSeconds: 0 };
+            document.getElementById('daily').textContent = formatTime(stats.dailyTimeSpentSeconds);
+            document.getElementById('weekly').textContent = formatTime(stats.weeklyTimeSpentSeconds);
+            document.getElementById('monthly').textContent = formatTime(stats.monthlyTimeSpentSeconds);
+            checkTimeWarning(stats.dailyTimeSpentSeconds);
 
         } catch (error) {
             if (error.message.includes('Failed to fetch')) {
@@ -221,67 +228,66 @@ chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
     } else {
         showError('No active tab found');
     }
-});
+ } catch (error) { showError('Could not load usage. Check that the backend is running.', error); }
+})();
 
 // AI Analysis functionality
 async function analyzeUsage() {
-    const stored = await chrome.storage.local.get('deviceId');
-    let deviceId = stored.deviceId;
-    
-    if (!deviceId) {
-        alert('No device ID found. Please refresh the extension.');
-        return;
-    }
-    
     const analyzeBtn = document.getElementById('analyzeBtn');
     const aiAnalysis = document.getElementById('aiAnalysis');
-    
-    // Show loading state
     analyzeBtn.textContent = 'Analyzing...';
     analyzeBtn.disabled = true;
-    aiAnalysis.style.display = 'none';
+    aiAnalysis.hidden = true;
+    setStatus('Analyzing your usage...');
     
     try {
-        const response = await fetch(`http://localhost:8080/api/tracking/analyze/daily?deviceId=${deviceId}`);
-        
-        if (!response.ok) {
-            throw new Error(`Server error (${response.status}): ${await response.text()}`);
-        }
-        
+        const deviceId = usageDeviceId;
+        if (!deviceId) throw new Error('No device ID found. Close and reopen the popup.');
+        const classifier = document.getElementById('analysisClassifier').value;
+        const ranges = getUsageRanges();
+        const url = new URL(`${API_BASE}/sessions/analyze`);
+        url.searchParams.set('deviceId', deviceId);
+        url.searchParams.set('from', ranges.today.toISOString());
+        url.searchParams.set('to', ranges.now.toISOString());
+        url.searchParams.set('classifier', classifier);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Analysis failed (${response.status}): ${await response.text()}`);
         const analysis = await response.json();
         
         // Display the analysis
-        document.getElementById('brainrotTime').textContent = formatTime(analysis.brainrotTime || 0);
+        document.getElementById('otherTime').textContent = formatTime(analysis.otherTime || 0);
         document.getElementById('studyTime').textContent = formatTime(analysis.studyTime || 0);
         document.getElementById('entertainmentTime').textContent = formatTime(analysis.entertainmentTime || 0);
-        document.getElementById('productivityTime').textContent = formatTime(analysis.productivityTime || 0);
-        document.getElementById('socialMediaTime').textContent = formatTime(analysis.socialMediaTime || 0);
+        document.getElementById('workTime').textContent = formatTime(analysis.workTime || 0);
+        document.getElementById('socialTime').textContent = formatTime(analysis.socialTime || 0);
         document.getElementById('analysisText').textContent = analysis.analysis || 'No analysis available';
         document.getElementById('recommendationText').textContent = analysis.recommendation || 'No recommendation available';
         
-        aiAnalysis.style.display = 'block';
+        aiAnalysis.hidden = false;
+        setStatus('Analysis complete.');
         
     } catch (error) {
         console.error('Error analyzing usage:', error);
-        alert('Error analyzing usage. Please try again later.');
+        setStatus(error.message.startsWith('No device ID') ? error.message : 'Could not analyze usage. Check that the backend is running and try again.');
     } finally {
         // Reset button state
-        analyzeBtn.textContent = 'Analyze My Usage';
+        analyzeBtn.textContent = 'Analyze my usage';
         analyzeBtn.disabled = false;
     }
 }
 
 // Add event listener for analyze button
-document.addEventListener('DOMContentLoaded', () => {
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    if (analyzeBtn) {
-        analyzeBtn.addEventListener('click', analyzeUsage);
-    }
-});
+document.getElementById('analyzeBtn').addEventListener('click', analyzeUsage);
 
-// cleanup
-window.addEventListener('unload', () => {
-    if (updateInterval) {
-        clearInterval(updateInterval);
+document.getElementById('openDashboardBtn').addEventListener('click', async () => {
+    try {
+        const { deviceId } = await chrome.storage.local.get('deviceId');
+        if (!deviceId) throw new Error('No device ID found. Close and reopen the popup.');
+        const dashboardUrl = new URL('http://localhost:8080/dashboard/index.html');
+        dashboardUrl.searchParams.set('deviceId', deviceId);
+        await chrome.tabs.create({ url: dashboardUrl.toString() });
+    } catch (error) {
+        console.error('Could not open dashboard:', error);
+        setStatus(error.message || 'Could not open the dashboard. Check that the backend is running.');
     }
 });

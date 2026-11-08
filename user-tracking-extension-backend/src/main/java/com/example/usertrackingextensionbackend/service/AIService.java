@@ -1,8 +1,7 @@
 package com.example.usertrackingextensionbackend.service;
 
-import com.example.usertrackingextensionbackend.dto.OpenAIRequest;
-import com.example.usertrackingextensionbackend.dto.OpenAIResponse;
+import com.example.usertrackingextensionbackend.dto.CategoryPrediction;
 
 public interface AIService {
-    OpenAIResponse analyzeWebsiteUsage(OpenAIRequest request);
-} 
+    CategoryPrediction classify(String domain, String title, boolean useCache);
+}

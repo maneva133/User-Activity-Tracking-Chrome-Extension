@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Activity overview | Focus</title>
+    <link rel="stylesheet" href="/dashboard/style.css">
+    <script src="/dashboard/app.js" defer></script>
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/dashboard/index.html" aria-label="Focus activity overview">
+            <span class="brand-mark" aria-hidden="true">F</span>
+            <span>Focus<span class="brand-muted"> / Activity</span></span>
+        </a>
+        <p class="local-badge"><span aria-hidden="true"></span> Local dashboard</p>
+    </header>
+
+    <main class="page-shell">
+        <section id="missingDevice" class="notice-card" hidden>
+            <p class="eyebrow">Connect your extension</p>
+            <h1>Open this dashboard from the extension</h1>
+            <p>The extension adds its local device ID so this page can load your activity. Start the backend, then choose <strong>Open dashboard</strong> in the extension popup.</p>
+        </section>
+
+        <div id="dashboard" hidden>
+            <section class="page-heading">
+                <div>
+                    <p class="eyebrow">Your browsing, at a glance</p>
+                    <h1>Activity overview</h1>
+                    <p class="subtitle">See where your time goes and how it changes over the selected period.</p>
+                </div>
+                <form id="rangeForm" class="range-controls">
+                    <div class="date-fields">
+                        <label>From <input id="fromDate" name="from" type="date" required></label>
+                        <label>To <input id="toDate" name="to" type="date" required></label>
+                    </div>
+                    <label class="classifier-field">Categories
+                        <select id="classifier" name="classifier">
+                            <option value="rules">Rules</option>
+                            <option value="llm">Gemini</option>
+                        </select>
+                    </label>
+                    <button class="button button-primary" type="submit">Update dashboard</button>
+                    <p class="helper-note">Gemini may send each distinct domain and page title to the API; cached classifications are reused.</p>
+                </form>
+            </section>
+
+            <nav class="range-presets" aria-label="Quick date ranges">
+                <button type="button" data-days="7" aria-pressed="true">Last 7 days</button>
+                <button type="button" data-days="30" aria-pressed="false">Last 30 days</button>
+                <button type="button" data-days="90" aria-pressed="false">Last 90 days</button>
+            </nav>
+
+            <p id="status" class="status" role="status" aria-live="polite"></p>
+
+            <section class="metric-grid" aria-label="Usage summary">
+                <article class="metric-card metric-primary">
+                    <p class="metric-label">Tracked time</p>
+                    <p id="totalTime" class="metric-value">—</p>
+                    <p id="rangeLabel" class="metric-note">Selected period</p>
+                </article>
+                <article class="metric-card">
+                    <p class="metric-label">Daily average</p>
+                    <p id="dailyAverage" class="metric-value">—</p>
+                    <p class="metric-note">Across active days</p>
+                </article>
+                <article class="metric-card">
+                    <p class="metric-label">Sites visited</p>
+                    <p id="siteCount" class="metric-value">—</p>
+                    <p class="metric-note">Unique domains</p>
+                </article>
+                <article class="metric-card">
+                    <p class="metric-label">Active days</p>
+                    <p id="activeDays" class="metric-value">—</p>
+                    <p class="metric-note">Days with tracked time</p>
+                </article>
+            </section>
+
+            <section class="content-grid">
+                <article class="panel trend-panel" aria-labelledby="trendHeading">
+                    <div class="panel-heading">
+                        <div><p class="eyebrow">Daily activity</p><h2 id="trendHeading">Time by day</h2></div>
+                        <span class="panel-unit">Hours</span>
+                    </div>
+                    <div class="trend-scroll"><div id="trendChart" class="trend-chart" role="img" aria-label="Daily browsing time in the selected date range" aria-describedby="trendSummary"></div></div>
+                    <ol id="trendSummary" class="visually-hidden"></ol>
+                    <p id="trendEmpty" class="empty-message" hidden>No sessions in this date range yet.</p>
+                </article>
+
+                <article class="panel category-panel" aria-labelledby="categoryHeading">
+                    <div class="panel-heading">
+                        <div><p class="eyebrow">How time is grouped</p><h2 id="categoryHeading">Categories</h2></div>
+                        <span id="categoryMode" class="mode-pill">Rules</span>
+                    </div>
+                    <div id="categoryList" class="category-list"></div>
+                    <p id="categoryEmpty" class="empty-message" hidden>No category totals for this range.</p>
+                </article>
+
+                <article class="panel sites-panel" aria-labelledby="sitesHeading">
+                    <div class="panel-heading">
+                        <div><p class="eyebrow">Most time spent</p><h2 id="sitesHeading">Top sites</h2></div>
+                        <span class="panel-unit">By domain</span>
+                    </div>
+                    <ol id="siteList" class="site-list"></ol>
+                    <p id="sitesEmpty" class="empty-message" hidden>No sites to show yet.</p>
+                </article>
+
+                <article class="panel sessions-panel" aria-labelledby="sessionsHeading">
+                    <div class="panel-heading">
+                        <div><p class="eyebrow">Latest records</p><h2 id="sessionsHeading">Recent sessions</h2></div>
+                        <span class="panel-unit">Latest 20</span>
+                    </div>
+                    <div class="table-scroll">
+                        <table>
+                            <caption class="visually-hidden">Recent tracked browsing sessions for the selected period</caption>
+                            <thead><tr><th scope="col">Site</th><th scope="col">Page</th><th scope="col">Rule category</th><th scope="col">When</th><th scope="col">Time</th></tr></thead>
+                            <tbody id="sessionRows"></tbody>
+                        </table>
+                    </div>
+                    <p id="sessionsEmpty" class="empty-message" hidden>No sessions to show yet.</p>
+                </article>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

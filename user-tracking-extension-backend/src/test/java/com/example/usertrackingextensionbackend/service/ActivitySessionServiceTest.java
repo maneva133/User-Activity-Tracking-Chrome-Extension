@@ -12,7 +12,8 @@ import static org.mockito.Mockito.mock;
 
 class ActivitySessionServiceTest {
     private final ActivitySessionService service = new ActivitySessionService(
-            mock(ActivitySessionRepository.class), mock(ReminderEventRepository.class));
+            mock(ActivitySessionRepository.class), mock(ReminderEventRepository.class),
+            mock(CategoryService.class), mock(AIService.class));
 
     @Test
     void rejectsEndBeforeStart() {

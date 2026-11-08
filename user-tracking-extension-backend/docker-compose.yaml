@@ -1,15 +1,38 @@
 services:
   db:
     image: postgres:17.4
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: user_tracking
-      POSTGRES_PASSWORD: user_tracking
-      POSTGRES_DB: user_tracking
+      POSTGRES_USER: ${POSTGRES_USER:-user_tracking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-user_tracking}
+      POSTGRES_DB: ${POSTGRES_DB:-user_tracking}
     ports:
-      - 1234:5432
+      - "${POSTGRES_PORT:-1234}:5432"
     volumes:
       - user-tracking-extension-backend_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user_tracking} -d ${POSTGRES_DB:-user_tracking}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-user_tracking}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-user_tracking}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-user_tracking}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "8080:8080"
 
 volumes:
   user-tracking-extension-backend_pgdata:

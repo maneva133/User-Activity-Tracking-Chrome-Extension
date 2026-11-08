@@ -5,8 +5,10 @@ import com.example.usertrackingextensionbackend.dto.OpenAIResponse;
 import com.example.usertrackingextensionbackend.dto.TrackingRequest;
 import com.example.usertrackingextensionbackend.dto.TrackingStatistics;
 import com.example.usertrackingextensionbackend.model.domain.WebsiteTracking;
+import com.example.usertrackingextensionbackend.model.domain.Category;
 import com.example.usertrackingextensionbackend.service.Impl.WebsiteTrackingServiceImpl;
 import com.example.usertrackingextensionbackend.service.AIService;
+import com.example.usertrackingextensionbackend.service.CategoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +25,7 @@ public class WebsiteTrackingController {
 
     private final WebsiteTrackingServiceImpl service;
     private final AIService aiService;
+    private final CategoryService categoryService;
 
     @PostMapping
     public ResponseEntity<TrackingRequest> saveTracking(@RequestBody TrackingRequest request) {
@@ -86,14 +89,17 @@ public class WebsiteTrackingController {
     }
 
     @PostMapping("/analyze")
-    public ResponseEntity<OpenAIResponse> analyzeWebsiteUsage(@RequestBody OpenAIRequest request) {
-        return ResponseEntity.ok(aiService.analyzeWebsiteUsage(request));
+    public ResponseEntity<OpenAIResponse> analyzeWebsiteUsage(
+            @RequestBody OpenAIRequest request,
+            @RequestParam(defaultValue = "rules") String classifier) {
+        return ResponseEntity.ok(analyze(request, classifier));
     }
 
     @GetMapping("/analyze/{timeFrame}")
     public ResponseEntity<OpenAIResponse> analyzeWebsiteUsageForDevice(
             @PathVariable String timeFrame,
-            @RequestParam String deviceId) {
+            @RequestParam String deviceId,
+            @RequestParam(defaultValue = "rules") String classifier) {
         
         List<TrackingStatistics> statistics = service.getDailyStatisticsForDevice(deviceId);
         
@@ -116,6 +122,36 @@ public class WebsiteTrackingController {
                 .map(stat -> new OpenAIRequest.WebsiteUsage(stat.getDomain(), stat.getDailyTimeSpentSeconds()))
                 .toList());
         
-        return ResponseEntity.ok(aiService.analyzeWebsiteUsage(request));
+        return ResponseEntity.ok(analyze(request, classifier));
     }
-} 
+
+    private OpenAIResponse analyze(OpenAIRequest request, String classifier) {
+        String selected = normalizeClassifier(classifier);
+        long study = 0, work = 0, entertainment = 0, social = 0, other = 0;
+        for (OpenAIRequest.WebsiteUsage website : request.getWebsites()) {
+            Category category = selected.equals("rules")
+                    ? categoryService.classifyByRules(website.getDomain(), "")
+                    : aiService.classify(website.getDomain(), "", true).category();
+            long seconds = website.getTimeSpentSeconds() == null ? 0 : website.getTimeSpentSeconds();
+            switch (category) {
+                case STUDY -> study += seconds;
+                case WORK -> work += seconds;
+                case ENTERTAINMENT -> entertainment += seconds;
+                case SOCIAL -> social += seconds;
+                case OTHER -> other += seconds;
+            }
+        }
+        return new OpenAIResponse(study, entertainment, work, social, other,
+                "Usage totals grouped by " + selected + " classifier.",
+                "Take regular breaks and review categories that do not match your goals.");
+    }
+
+    private String normalizeClassifier(String classifier) {
+        String selected = classifier == null ? "rules" : classifier.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!selected.equals("rules") && !selected.equals("llm")) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "classifier must be rules or llm");
+        }
+        return selected;
+    }
+}

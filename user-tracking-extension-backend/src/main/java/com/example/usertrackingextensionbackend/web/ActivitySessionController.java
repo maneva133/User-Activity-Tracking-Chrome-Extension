@@ -1,6 +1,7 @@
 package com.example.usertrackingextensionbackend.web;
 
 import com.example.usertrackingextensionbackend.dto.ActivitySessionRequest;
+import com.example.usertrackingextensionbackend.dto.OpenAIResponse;
 import com.example.usertrackingextensionbackend.dto.ReminderEventRequest;
 import com.example.usertrackingextensionbackend.model.domain.ActivitySession;
 import com.example.usertrackingextensionbackend.model.domain.ReminderEvent;
@@ -39,6 +40,15 @@ public class ActivitySessionController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
         return service.findSessions(deviceId, from, to);
+    }
+
+    @GetMapping("/sessions/analyze")
+    public OpenAIResponse analyzeSessions(
+            @RequestParam String deviceId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "rules") String classifier) {
+        return service.analyzeSessions(deviceId, from, to, classifier);
     }
 
     @GetMapping(value = "/export/{deviceId}.csv", produces = "text/csv")

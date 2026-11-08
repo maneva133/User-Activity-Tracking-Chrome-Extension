@@ -1,0 +1,33 @@
+{
+  "domains": {
+    "wikipedia.org": "STUDY",
+    "coursera.org": "STUDY",
+    "edx.org": "STUDY",
+    "khanacademy.org": "STUDY",
+    "scholar.google.com": "STUDY",
+    "github.com": "WORK",
+    "gitlab.com": "WORK",
+    "stackoverflow.com": "WORK",
+    "docs.google.com": "WORK",
+    "notion.so": "WORK",
+    "linkedin.com": "WORK",
+    "youtube.com": "ENTERTAINMENT",
+    "netflix.com": "ENTERTAINMENT",
+    "twitch.tv": "ENTERTAINMENT",
+    "spotify.com": "ENTERTAINMENT",
+    "tiktok.com": "ENTERTAINMENT",
+    "facebook.com": "SOCIAL",
+    "instagram.com": "SOCIAL",
+    "reddit.com": "SOCIAL",
+    "x.com": "SOCIAL",
+    "twitter.com": "SOCIAL",
+    "discord.com": "SOCIAL"
+  },
+  "titleKeywords": {
+    "STUDY": ["lecture", "course", "tutorial", "lesson", "research paper", "study guide", "textbook"],
+    "WORK": ["dashboard", "project", "issue tracker", "pull request", "spreadsheet", "meeting", "invoice"],
+    "ENTERTAINMENT": ["watch", "movie", "episode", "music video", "gameplay", "stream"],
+    "SOCIAL": ["feed", "profile", "messages", "community", "comments", "social"],
+    "OTHER": []
+  }
+}

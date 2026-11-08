@@ -7,11 +7,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class OpenAIResponse {
-    private Long brainrotTime;
     private Long studyTime;
     private Long entertainmentTime;
-    private Long productivityTime;
-    private Long socialMediaTime;
+    private Long workTime;
+    private Long socialTime;
+    private Long otherTime;
     private String analysis;
     private String recommendation;
-} 
+}

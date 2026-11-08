@@ -1,98 +1,62 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Website Time Tracking</title>
-    <script src="libs/chart.min.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Website Time Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="libs/chart.min.js" defer></script>
     <script src="popup.js" defer></script>
-    <style>
-        body {
-            width: 400px;
-            padding: 15px;
-            font-family: Arial, sans-serif;
-        }
-        .stat-box {
-            margin: 10px 0;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-        }
-        .stat-label {
-            font-weight: bold;
-            color: #666;
-        }
-        .warning {
-            background-color: #fff3cd;
-            color: #856404;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-            display: none;
-        }
-        .chart-container {
-            margin-top: 20px;
-            height: 300px;
-        }
-    </style>
 </head>
 <body>
-    <h2>Current Site Time Spent</h2>
-    <div class="stat-box">
-        <div class="stat-label">Today:</div>
-        <div id="daily">Loading...</div>
-    </div>
-    <div class="stat-box">
-        <div class="stat-label">This Week:</div>
-        <div id="weekly">Loading...</div>
-    </div>
-    <div class="stat-box">
-        <div class="stat-label">This Month:</div>
-        <div id="monthly">Loading...</div>
-    </div>
+    <main class="container">
+        <h1>Current site time</h1>
+        <button id="openDashboardBtn" type="button">Open full dashboard</button>
+        <section aria-labelledby="reminders-heading">
+            <h2 id="reminders-heading">Break reminders</h2>
+            <div class="stat-box settings">
+                <label for="reminderStrategy">Strategy</label>
+                <select id="reminderStrategy">
+                    <option value="FIXED">Fixed (30 minutes)</option>
+                    <option value="ADAPTIVE">Adaptive</option>
+                    <option value="PERSONALIZED">Personalized</option>
+                </select>
+                <label class="checkbox-label"><input type="checkbox" id="doNotDisturb"> Do not disturb</label>
+            </div>
+        </section>
+        <section aria-label="Time spent">
+            <div class="stat-box"><div class="stat-label">Today</div><div id="daily">Loading…</div></div>
+            <div class="stat-box"><div class="stat-label">This week</div><div id="weekly">Loading…</div></div>
+            <div class="stat-box"><div class="stat-label">This month</div><div id="monthly">Loading…</div></div>
+        </section>
+        <p id="timeWarning" class="warning" role="status" hidden>Warning: You’ve spent more than 5 hours on this site today.</p>
 
-    <div id="timeWarning" class="warning">
-        Warning: You've spent more than 5 hours on this site today!
-    </div>
+        <section aria-labelledby="chart-heading">
+            <h2 id="chart-heading">All sites today</h2>
+            <p id="chartDescription" class="sr-only">Bar chart showing today, average daily usage this week, and average daily usage this month. Each domain has its own color. A text summary follows.</p>
+            <div class="chart-container"><canvas id="usageChart" role="img" aria-label="Top five sites usage statistics" aria-describedby="chartDescription chartSummary"></canvas></div>
+            <ul id="chartSummary" class="sr-only" aria-label="Top sites usage data"></ul>
+        </section>
 
-    <h2>All Sites Usage Today</h2>
-    <div class="chart-container">
-        <canvas id="usageChart" width="600" height="400"></canvas>
-    </div>
-
-    <h2>AI Analysis</h2>
-    <button id="analyzeBtn" style="margin-bottom: 10px; padding: 8px 16px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
-        Analyze My Usage
-    </button>
-    <div id="aiAnalysis" style="display: none;">
-        <div class="stat-box">
-            <div class="stat-label">Brain Rot Time:</div>
-            <div id="brainrotTime">-</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Study Time:</div>
-            <div id="studyTime">-</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Entertainment Time:</div>
-            <div id="entertainmentTime">-</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Productivity Time:</div>
-            <div id="productivityTime">-</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Social Media Time:</div>
-            <div id="socialMediaTime">-</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Analysis:</div>
-            <div id="analysisText" style="font-style: italic; color: #666;">-</div>
-        </div>
-        <div class="stat-box">
-            <div class="stat-label">Recommendation:</div>
-            <div id="recommendationText" style="font-style: italic; color: #666;">-</div>
-        </div>
-    </div>
-
-    <script src="popup.js"></script>
+        <section aria-labelledby="analysis-heading">
+            <h2 id="analysis-heading">AI analysis</h2>
+            <label for="analysisClassifier">Classifier</label>
+            <select id="analysisClassifier">
+                <option value="rules">Rules</option>
+                <option value="llm">Gemini LLM</option>
+            </select>
+            <button id="analyzeBtn" type="button">Analyze my usage</button>
+            <p id="analysisStatus" class="status" role="status" aria-live="polite"></p>
+            <div id="aiAnalysis" hidden>
+                <div class="stat-box"><div class="stat-label">Other time</div><div id="otherTime">-</div></div>
+                <div class="stat-box"><div class="stat-label">Study time</div><div id="studyTime">-</div></div>
+                <div class="stat-box"><div class="stat-label">Entertainment time</div><div id="entertainmentTime">-</div></div>
+                <div class="stat-box"><div class="stat-label">Work time</div><div id="workTime">-</div></div>
+                <div class="stat-box"><div class="stat-label">Social time</div><div id="socialTime">-</div></div>
+                <div class="stat-box"><div class="stat-label">Analysis</div><div id="analysisText" class="prose">-</div></div>
+                <div class="stat-box"><div class="stat-label">Recommendation</div><div id="recommendationText" class="prose">-</div></div>
+            </div>
+        </section>
+    </main>
 </body>
 </html>

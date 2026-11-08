@@ -1,26 +1,29 @@
 package com.example.usertrackingextensionbackend.service.Impl;
-import com.example.usertrackingextensionbackend.dto.OpenAIRequest;
-import com.example.usertrackingextensionbackend.dto.OpenAIResponse;
+
+import com.example.usertrackingextensionbackend.dto.CategoryPrediction;
+import com.example.usertrackingextensionbackend.model.domain.Category;
+import com.example.usertrackingextensionbackend.model.domain.CategoryCache;
+import com.example.usertrackingextensionbackend.repository.CategoryCacheRepository;
 import com.example.usertrackingextensionbackend.service.AIService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import java.util.HashMap;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class GeminiService implements AIService {
-    @Value("${gemini.api.key}")
+    @Value("${gemini.api.key:}")
     private String geminiApiKey;
 
     @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/}")
@@ -30,179 +33,102 @@ public class GeminiService implements AIService {
     private String geminiModel;
 
     private final RestTemplate restTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final CategoryCacheRepository cacheRepository;
+    private final ObjectMapper objectMapper;
 
     @Override
-    public OpenAIResponse analyzeWebsiteUsage(OpenAIRequest request) {
+    public CategoryPrediction classify(String domain, String title, boolean useCache) {
+        String normalizedDomain = normalizeDomain(domain);
+        String titleHash = hashTitle(title);
+        if (useCache) {
+            var cached = cacheRepository.findTopByDomainAndTitleHashAndModelOrderByCreatedAtDesc(
+                    normalizedDomain, titleHash, geminiModel);
+            if (cached.isPresent()) {
+                return new CategoryPrediction(cached.get().getCategory(), "llm", geminiModel, true, 0);
+            }
+        }
+
+        Category category;
         try {
-            String prompt = buildPrompt(request);
-            String response = callGemini(prompt);
-            return parseGeminiResponse(response);
-        } catch (Exception e) {
-            log.error("Error analyzing website usage with Gemini", e);
-            return createDefaultResponse();
-        }
-    }
-
-    private String buildPrompt(OpenAIRequest request) {
-        StringBuilder prompt = new StringBuilder();
-        prompt.append("Analyze the following website usage statistics and categorize the time spent into different activities. ");
-        prompt.append("IMPORTANT: Return ONLY a valid JSON object. All time values must be single numbers (no math expressions like '180 + 120'). ");
-        prompt.append("Calculate the total time for each category and provide only the final number in seconds.\n\n");
-        prompt.append("Required JSON structure:\n");
-        prompt.append("{\n");
-        prompt.append("  \"brainrotTime\": <total seconds as number>,\n");
-        prompt.append("  \"studyTime\": <total seconds as number>,\n");
-        prompt.append("  \"entertainmentTime\": <total seconds as number>,\n");
-        prompt.append("  \"productivityTime\": <total seconds as number>,\n");
-        prompt.append("  \"socialMediaTime\": <total seconds as number>,\n");
-        prompt.append("  \"analysis\": \"<brief analysis>\",\n");
-        prompt.append("  \"recommendation\": \"<recommendation>\"\n");
-        prompt.append("}\n\n");
-
-        prompt.append("Website usage for ").append(request.getTimeFrame()).append(":\n");
-
-        for (OpenAIRequest.WebsiteUsage usage : request.getWebsites()) {
-            long hours = usage.getTimeSpentSeconds() / 3600;
-            long minutes = (usage.getTimeSpentSeconds() % 3600) / 60;
-            prompt.append("- ").append(usage.getDomain()).append(": ");
-            if (hours > 0) {
-                prompt.append(hours).append("h");
-            }
-            if (minutes > 0) {
-                prompt.append(minutes).append("min");
-            }
-            prompt.append(" (").append(usage.getTimeSpentSeconds()).append(" seconds)\n");
+            category = callGemini(normalizedDomain, title == null ? "" : title);
+        } catch (Exception exception) {
+            log.warn("Gemini classification failed for domain {}; using OTHER", normalizedDomain, exception);
+            int apiCalls = geminiApiKey == null || geminiApiKey.isBlank() ? 0 : 1;
+            return new CategoryPrediction(Category.OTHER, "llm", geminiModel, false, apiCalls);
         }
 
-        prompt.append("\nCategorize these websites into:\n");
-        prompt.append("- brainrotTime: Time spent on mindless scrolling, addictive content\n");
-        prompt.append("- studyTime: Time spent on educational websites, learning platforms\n");
-        prompt.append("- entertainmentTime: Time spent on entertainment, gaming, streaming\n");
-        prompt.append("- productivityTime: Time spent on work, productivity tools, professional development\n");
-        prompt.append("- socialMediaTime: Time spent on social networking sites\n");
-        prompt.append("\nRemember: All time values must be single numbers, not mathematical expressions!\n");
-
-        return prompt.toString();
-    }
-
-    private String callGemini(String prompt) {
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("x-goog-api-key", geminiApiKey);
-
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("contents", new Object[]{
-                    Map.of("parts", new Object[]{
-                            Map.of("text", prompt)
-                    })
-            });
-            requestBody.put("generationConfig", Map.of(
-                    "temperature", 0.3,
-                    "maxOutputTokens", 500
-            ));
-
-            String baseUrl = geminiApiUrl.endsWith("/") ? geminiApiUrl : geminiApiUrl + "/";
-            String url = baseUrl + geminiModel + ":generateContent";
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-
-            log.info("Calling Gemini API model {}", geminiModel);
-            log.debug("Gemini request body: {}", objectMapper.writeValueAsString(requestBody));
-
-            ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
-
-            log.info("Gemini API response status: {}", response.getStatusCode());
-            log.debug("Gemini API response body: {}", response.getBody());
-
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                return response.getBody();
-            } else {
-                log.error("Gemini API returned non-successful status: {}", response.getStatusCode());
-                throw new RuntimeException("Gemini API request failed");
-            }
-        } catch (Exception e) {
-            log.error("Error calling Gemini API", e);
-            throw new RuntimeException("Failed to call Gemini API", e);
+            CategoryCache cache = new CategoryCache();
+            cache.setDomain(normalizedDomain);
+            cache.setTitleHash(titleHash);
+            cache.setCategory(category);
+            cache.setModel(geminiModel);
+            cacheRepository.save(cache);
+        } catch (Exception exception) {
+            log.error("Unable to cache Gemini category for domain {}", normalizedDomain, exception);
         }
+        return new CategoryPrediction(category, "llm", geminiModel, false, 1);
     }
 
-    private OpenAIResponse parseGeminiResponse(String geminiResponse) {
-        try {
-            log.debug("Parsing Gemini response: {}", geminiResponse);
-
-            JsonNode responseNode = objectMapper.readTree(geminiResponse);
-
-            if (responseNode.has("error")) {
-                log.error("Gemini API returned error: {}", responseNode.get("error"));
-                return createDefaultResponse();
-            }
-
-            if (!responseNode.has("candidates") || responseNode.get("candidates").isEmpty()) {
-                log.error("No candidates found in Gemini response");
-                return createDefaultResponse();
-            }
-
-            JsonNode candidate = responseNode.get("candidates").get(0);
-            if (!candidate.has("content") || !candidate.get("content").has("parts")) {
-                log.error("Invalid candidate structure in Gemini response");
-                return createDefaultResponse();
-            }
-
-            String content = candidate.get("content").get("parts").get(0).get("text").asText();
-            log.debug("Extracted content from Gemini: {}", content);
-
-            content = content.trim();
-            if (content.startsWith("```json")) {
-                content = content.substring(7);
-            }
-            if (content.endsWith("```")) {
-                content = content.substring(0, content.length() - 3);
-            }
-            content = content.trim();
-
-            log.debug("Cleaned content for JSON parsing: {}", content);
-
-            content = fixJsonContent(content);
-
-            JsonNode analysisNode = objectMapper.readTree(content);
-
-            return new OpenAIResponse(
-                    analysisNode.get("brainrotTime").asLong(),
-                    analysisNode.get("studyTime").asLong(),
-                    analysisNode.get("entertainmentTime").asLong(),
-                    analysisNode.get("productivityTime").asLong(),
-                    analysisNode.get("socialMediaTime").asLong(),
-                    analysisNode.get("analysis").asText(),
-                    analysisNode.get("recommendation").asText()
-            );
-        } catch (Exception e) {
-            log.error("Error parsing Gemini response", e);
-            return createDefaultResponse();
+    private Category callGemini(String domain, String title) throws Exception {
+        if (geminiApiKey == null || geminiApiKey.isBlank()) {
+            throw new IllegalStateException("gemini.api.key is not configured");
         }
-    }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("x-goog-api-key", geminiApiKey);
 
-    private String fixJsonContent(String content) {
-        content = content.replaceAll("\"productivityTime\":\\s*([0-9]+)\\s*\\+\\s*([0-9]+)",
-                "\"productivityTime\": $1");
-        content = content.replaceAll("\"brainrotTime\":\\s*([0-9]+)\\s*\\+\\s*([0-9]+)",
-                "\"brainrotTime\": $1");
-        content = content.replaceAll("\"studyTime\":\\s*([0-9]+)\\s*\\+\\s*([0-9]+)",
-                "\"studyTime\": $1");
-        content = content.replaceAll("\"entertainmentTime\":\\s*([0-9]+)\\s*\\+\\s*([0-9]+)",
-                "\"entertainmentTime\": $1");
-        content = content.replaceAll("\"socialMediaTime\":\\s*([0-9]+)\\s*\\+\\s*([0-9]+)",
-                "\"socialMediaTime\": $1");
-        log.debug("Fixed JSON content: {}", content);
-        return content;
-    }
-
-    private OpenAIResponse createDefaultResponse() {
-        return new OpenAIResponse(
-                0L, 0L, 0L, 0L, 0L,
-                "Unable to analyze usage at this time.",
-                "Try again later or check your internet connection."
+        Map<String, Object> schema = Map.of(
+                "type", "OBJECT",
+                "properties", Map.of("category", Map.of(
+                        "type", "STRING",
+                        "enum", new String[]{"STUDY", "WORK", "ENTERTAINMENT", "SOCIAL", "OTHER"})),
+                "required", new String[]{"category"}
         );
+        String prompt = "Classify this single website into exactly one category: STUDY, WORK, ENTERTAINMENT, SOCIAL, or OTHER. " +
+                "Use the domain and page title only. Return the category in the required JSON schema.\n" +
+                "Domain: " + domain + "\nTitle: " + title;
+        Map<String, Object> requestBody = Map.of(
+                "contents", new Object[]{Map.of("parts", new Object[]{Map.of("text", prompt)})},
+                "generationConfig", Map.of(
+                        "temperature", 0,
+                        "maxOutputTokens", 64,
+                        "responseMimeType", "application/json",
+                        "responseSchema", schema
+                )
+        );
+        String baseUrl = geminiApiUrl.endsWith("/") ? geminiApiUrl : geminiApiUrl + "/";
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                baseUrl + geminiModel + ":generateContent",
+                new HttpEntity<>(requestBody, headers), String.class);
+        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+            throw new IllegalStateException("Gemini returned an empty or unsuccessful response: " + response.getStatusCode());
+        }
+        JsonNode root = objectMapper.readTree(response.getBody());
+        JsonNode text = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
+        if (!text.isTextual()) throw new IllegalArgumentException("Gemini response did not contain category JSON");
+        JsonNode categoryNode = objectMapper.readTree(text.asText()).path("category");
+        if (!categoryNode.isTextual()) throw new IllegalArgumentException("Gemini category field is missing or invalid");
+        try {
+            return Category.valueOf(categoryNode.asText().trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Gemini returned an unknown category", exception);
+        }
+    }
+
+    private String hashTitle(String title) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(
+                    (title == null ? "" : title.trim().toLowerCase(java.util.Locale.ROOT)).getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Unable to hash page title", exception);
+        }
+    }
+
+    private String normalizeDomain(String domain) {
+        if (domain == null) return "";
+        return domain.trim().toLowerCase(java.util.Locale.ROOT)
+                .replaceFirst("^https?://", "").replaceFirst("/.*$", "").replaceFirst("^www\\.", "");
     }
 }
-
