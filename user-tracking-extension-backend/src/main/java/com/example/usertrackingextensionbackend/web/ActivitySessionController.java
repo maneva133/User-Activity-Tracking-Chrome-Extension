@@ -3,6 +3,8 @@ package com.example.usertrackingextensionbackend.web;
 import com.example.usertrackingextensionbackend.dto.ActivitySessionRequest;
 import com.example.usertrackingextensionbackend.dto.OpenAIResponse;
 import com.example.usertrackingextensionbackend.dto.ReminderEventRequest;
+import com.example.usertrackingextensionbackend.dto.DeletedUsageRange;
+import com.example.usertrackingextensionbackend.dto.UsageOverview;
 import com.example.usertrackingextensionbackend.model.domain.ActivitySession;
 import com.example.usertrackingextensionbackend.model.domain.ReminderEvent;
 import com.example.usertrackingextensionbackend.service.ActivitySessionService;
@@ -40,6 +42,23 @@ public class ActivitySessionController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
         return service.findSessions(deviceId, from, to);
+    }
+
+    @GetMapping("/sessions/overview")
+    public UsageOverview getOverview(
+            @RequestParam String deviceId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "UTC") String timeZone) {
+        return service.getOverview(deviceId, from, to, timeZone);
+    }
+
+    @DeleteMapping("/sessions")
+    public DeletedUsageRange deleteUsageRange(
+            @RequestParam String deviceId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to) {
+        return service.deleteUsageRange(deviceId, from, to);
     }
 
     @GetMapping("/sessions/analyze")

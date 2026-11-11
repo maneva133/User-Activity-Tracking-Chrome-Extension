@@ -10,6 +10,8 @@ const BREAK_KEY = 'lastBreakTs';
 const BREAK_START_KEY = 'breakStartTs';
 const CONTINUOUS_START_KEY = 'continuousActiveSince';
 const PERSONALIZED_HISTORY_KEY = 'personalizedSessionHistory';
+const DOMAIN_PREFERENCES_CACHE_KEY = 'domainPreferencesCache';
+const DOMAIN_PREFERENCES_CACHE_TTL_MS = 15 * 1000;
 const CATEGORY_KEYWORDS = {
     study: ['wikipedia.org', 'coursera.org', 'edx.org', 'khanacademy.org'],
     work: ['github.com', 'gitlab.com', 'linear.app', 'atlassian.net'],
@@ -20,6 +22,14 @@ const NOTIFICATION_ID = 'break-reminder';
 
 function runSafely(task, label) {
     void task().catch(error => console.error(`${label} failed.`, error));
+}
+
+let trackingQueue = Promise.resolve();
+function runTrackingSafely(task, label) {
+    trackingQueue = trackingQueue.then(task).catch(error => {
+        console.error(`${label} failed.`, error);
+    });
+    return trackingQueue;
 }
 
 function categoryFor(domain) {
@@ -139,6 +149,24 @@ async function getDeviceId() {
     return created;
 }
 
+async function getDomainPreferences() {
+    const { [DOMAIN_PREFERENCES_CACHE_KEY]: cached } = await chrome.storage.local.get(DOMAIN_PREFERENCES_CACHE_KEY);
+    if (cached && Date.now() - cached.fetchedAt < DOMAIN_PREFERENCES_CACHE_TTL_MS) return cached.items;
+    try {
+        const deviceId = await getDeviceId();
+        const url = new URL(`${API_BASE}/device-domains`);
+        url.searchParams.set('deviceId', deviceId);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Preferences request failed (${response.status})`);
+        const items = await response.json();
+        await chrome.storage.local.set({ [DOMAIN_PREFERENCES_CACHE_KEY]: { fetchedAt: Date.now(), items } });
+        return items;
+    } catch (error) {
+        console.warn('Could not refresh domain preferences; using the last cached settings.', error);
+        return cached?.items || [];
+    }
+}
+
 async function enqueueSession(session, endTs = Date.now()) {
     const durationSeconds = Math.floor((endTs - session.startTime) / 1000);
     if (durationSeconds <= 0) return;
@@ -182,6 +210,7 @@ async function activeTabSession() {
     const tab = tabs[0];
     if (!tab || tab.incognito || !tab.url) return null;
     const domain = extractDomainFromUrl(tab.url);
+    if (domain && (await getDomainPreferences()).some(item => item.domain === domain && item.excluded)) return null;
     return domain ? { domain, title: tab.title || '', tabId: tab.id } : null;
 }
 
@@ -257,15 +286,15 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 chrome.runtime.onStartup.addListener(() => {
     runSafely(() => chrome.alarms.create('tracking-heartbeat', { periodInMinutes: 1 }), 'Creating tracking alarm');
-    runSafely(syncActiveTab, 'Syncing active tab');
+    runTrackingSafely(syncActiveTab, 'Syncing active tab');
 });
 chrome.alarms.onAlarm.addListener(alarm => {
-    if (alarm.name === 'tracking-heartbeat') runSafely(heartbeat, 'Tracking heartbeat');
+    if (alarm.name === 'tracking-heartbeat') runTrackingSafely(heartbeat, 'Tracking heartbeat');
 });
 chrome.idle.setDetectionInterval(60);
 chrome.idle.onStateChanged.addListener(state => {
-    if (state === 'active') runSafely(syncActiveTab, 'Syncing active tab');
-    else runSafely(async () => {
+    if (state === 'active') runTrackingSafely(syncActiveTab, 'Syncing active tab');
+    else runTrackingSafely(async () => {
         const session = await getSession();
         if (session) {
             const awayAt = Date.now();
@@ -275,17 +304,17 @@ chrome.idle.onStateChanged.addListener(state => {
         } else await transitionTo(null);
     }, 'Handling idle state');
 });
-chrome.tabs.onActivated.addListener(() => runSafely(syncActiveTab, 'Handling tab activation'));
-chrome.tabs.onRemoved.addListener(() => runSafely(syncActiveTab, 'Handling tab removal'));
-chrome.tabs.onReplaced.addListener(() => runSafely(syncActiveTab, 'Handling tab replacement'));
+chrome.tabs.onActivated.addListener(() => runTrackingSafely(syncActiveTab, 'Handling tab activation'));
+chrome.tabs.onRemoved.addListener(() => runTrackingSafely(syncActiveTab, 'Handling tab removal'));
+chrome.tabs.onReplaced.addListener(() => runTrackingSafely(syncActiveTab, 'Handling tab replacement'));
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tab.active && (changeInfo.url || changeInfo.status === 'complete' || changeInfo.title)) {
-        runSafely(syncActiveTab, 'Handling tab update');
+        runTrackingSafely(syncActiveTab, 'Handling tab update');
     }
 });
 chrome.windows.onFocusChanged.addListener(windowId => {
-    if (windowId === chrome.windows.WINDOW_ID_NONE) runSafely(() => transitionTo(null), 'Handling window blur');
-    else runSafely(syncActiveTab, 'Handling window focus');
+    if (windowId === chrome.windows.WINDOW_ID_NONE) runTrackingSafely(() => transitionTo(null), 'Handling window blur');
+    else runTrackingSafely(syncActiveTab, 'Handling window focus');
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -306,4 +335,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-runSafely(syncActiveTab, 'Initial active tab sync');
+runTrackingSafely(syncActiveTab, 'Initial active tab sync');

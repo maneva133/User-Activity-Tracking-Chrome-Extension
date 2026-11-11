@@ -3,17 +3,20 @@ package com.example.usertrackingextensionbackend.service;
 import com.example.usertrackingextensionbackend.dto.ActivitySessionRequest;
 import com.example.usertrackingextensionbackend.repository.ActivitySessionRepository;
 import com.example.usertrackingextensionbackend.repository.ReminderEventRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 class ActivitySessionServiceTest {
+    private final ActivitySessionRepository sessions = mock(ActivitySessionRepository.class);
+    private final DeviceDomainPreferenceService domainPreferences = mock(DeviceDomainPreferenceService.class);
     private final ActivitySessionService service = new ActivitySessionService(
-            mock(ActivitySessionRepository.class), mock(ReminderEventRepository.class),
-            mock(CategoryService.class), mock(AIService.class));
+            sessions, mock(ReminderEventRepository.class), mock(CategoryService.class),
+            mock(AIService.class), domainPreferences);
 
     @Test
     void rejectsEndBeforeStart() {
@@ -34,6 +37,15 @@ class ActivitySessionServiceTest {
         ActivitySessionRequest request = validRequest();
         request.setDomain("  ");
         assertThrows(IllegalArgumentException.class, () -> service.createSession(request));
+    }
+
+    @Test
+    void mapsConcurrentDuplicateInsertToConflictException() {
+        ActivitySessionRequest request = validRequest();
+        request.setCategory("OTHER");
+        when(sessions.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        assertThrows(DuplicateRecordException.class, () -> service.createSession(request));
     }
 
     private ActivitySessionRequest validRequest() {

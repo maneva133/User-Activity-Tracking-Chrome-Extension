@@ -20,13 +20,5 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "host_permissions": ["http://localhost:8080/*"],
-
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["contentScript.js"],
-      "run_at": "document_start"
-    }
-  ]
+  "host_permissions": ["http://localhost:8080/*"]
 }

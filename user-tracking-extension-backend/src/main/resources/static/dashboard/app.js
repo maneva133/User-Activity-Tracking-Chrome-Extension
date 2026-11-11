@@ -31,8 +31,17 @@ const elements = {
     sitesEmpty: document.getElementById('sitesEmpty'),
     sessionRows: document.getElementById('sessionRows'),
     sessionsEmpty: document.getElementById('sessionsEmpty'),
-    updateButton: document.querySelector('#rangeForm button[type="submit"]')
+    updateButton: document.querySelector('#rangeForm button[type="submit"]'),
+    exportButton: document.getElementById('exportButton'),
+    deleteRangeButton: document.getElementById('deleteRangeButton'),
+    siteSearch: document.getElementById('siteSearch'),
+    domainSettingRows: document.getElementById('domainSettingRows'),
+    settingsEmpty: document.getElementById('settingsEmpty')
 };
+
+let currentDeviceId = null;
+let currentOverview = null;
+let currentPreferences = [];
 
 function localDateKey(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -94,13 +103,18 @@ function getRange() {
     return { start, end };
 }
 
-async function loadSessions(deviceId, range) {
-    const url = makeApiUrl('/sessions', {
+async function loadOverview(deviceId, range) {
+    const url = makeApiUrl('/sessions/overview', {
         deviceId,
         from: range.start.toISOString(),
-        to: range.end.toISOString()
+        to: range.end.toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     });
     return fetchJson(url);
+}
+
+async function loadDomainPreferences(deviceId) {
+    return fetchJson(makeApiUrl('/device-domains', { deviceId }));
 }
 
 async function loadCategoryTotals(deviceId, range, classifier) {
@@ -113,35 +127,17 @@ async function loadCategoryTotals(deviceId, range, classifier) {
     return fetchJson(url);
 }
 
-function aggregateSessions(sessions) {
-    const bySite = new Map();
-    const byDay = new Map();
-    const activeDays = new Set();
-    let total = 0;
-
-    for (const session of sessions) {
-        const seconds = Math.max(0, Number(session.durationSeconds) || 0);
-        if (!seconds) continue;
-        const site = session.domain || 'Unknown site';
-        const day = localDateKey(new Date(session.endTs));
-        bySite.set(site, (bySite.get(site) || 0) + seconds);
-        byDay.set(day, (byDay.get(day) || 0) + seconds);
-        activeDays.add(day);
-        total += seconds;
-    }
-
-    return { bySite, byDay, activeDays, total };
-}
-
-function renderMetrics(sessions, aggregate, range) {
-    elements.totalTime.textContent = formatDuration(aggregate.total);
-    elements.dailyAverage.textContent = formatDuration(aggregate.activeDays.size ? aggregate.total / aggregate.activeDays.size : 0);
-    elements.siteCount.textContent = String(aggregate.bySite.size);
-    elements.activeDays.textContent = String(aggregate.activeDays.size);
+function renderMetrics(overview, range) {
+    elements.totalTime.textContent = formatDuration(overview.totalSeconds);
+    elements.dailyAverage.textContent = formatDuration(overview.activeDays ? overview.totalSeconds / overview.activeDays : 0);
+    elements.siteCount.textContent = String(overview.siteCount);
+    elements.activeDays.textContent = String(overview.activeDays);
     elements.rangeLabel.textContent = `${formatDate(range.start)} – ${formatDate(range.end)}`;
-    renderTrend(aggregate.byDay, range);
-    renderSites(aggregate.bySite);
-    renderRecentSessions(sessions);
+    const byDay = new Map(overview.dailyTotals.map(item => [item.date, item.seconds]));
+    renderTrend(byDay, range);
+    renderSites(overview.siteTotals);
+    renderRecentSessions(overview.recentSessions);
+    renderDomainSettings(overview.siteTotals, currentPreferences);
 }
 
 function renderTrend(byDay, range) {
@@ -228,35 +224,141 @@ function renderCategories(analysis, classifier) {
     elements.categoryEmpty.hidden = categories.some(category => category.seconds > 0);
 }
 
-function renderSites(bySite) {
+function renderSites(siteTotals) {
     elements.siteList.replaceChildren();
-    const sites = [...bySite.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
-    const maximum = Math.max(1, ...sites.map(([, seconds]) => seconds));
-    sites.forEach(([domain, seconds], index) => {
+    const sites = siteTotals.slice(0, 8);
+    const maximum = Math.max(1, ...sites.map(site => site.seconds));
+    sites.forEach((site, index) => {
         const row = document.createElement('li');
         row.className = 'site-row';
         const name = document.createElement('span');
         name.className = 'site-domain';
-        name.textContent = domain;
+        name.textContent = site.domain;
         const track = document.createElement('span');
         track.className = 'site-track';
         track.setAttribute('role', 'meter');
-        track.setAttribute('aria-label', `${domain} time`);
+        track.setAttribute('aria-label', `${site.domain} time`);
         track.setAttribute('aria-valuemin', '0');
         track.setAttribute('aria-valuemax', String(maximum));
-        track.setAttribute('aria-valuenow', String(seconds));
+        track.setAttribute('aria-valuenow', String(site.seconds));
         const fill = document.createElement('span');
         fill.className = 'site-fill';
-        fill.style.setProperty('--bar-width', `${seconds / maximum * 100}%`);
+        fill.style.setProperty('--bar-width', `${site.seconds / maximum * 100}%`);
         fill.style.setProperty('--site-color', SITE_COLORS[index % SITE_COLORS.length]);
         track.append(fill);
         const time = document.createElement('span');
         time.className = 'site-time';
-        time.textContent = formatDuration(seconds);
+        time.textContent = formatDuration(site.seconds);
         row.append(name, track, time);
         elements.siteList.append(row);
     });
     elements.sitesEmpty.hidden = sites.length > 0;
+}
+
+function renderDomainSettings(siteTotals, preferences) {
+    const byDomain = new Map(siteTotals.map(site => [site.domain, { domain: site.domain, seconds: site.seconds, preference: null }]));
+    for (const preference of preferences) {
+        const current = byDomain.get(preference.domain) || { domain: preference.domain, seconds: 0, preference: null };
+        current.preference = preference;
+        byDomain.set(preference.domain, current);
+    }
+    const filter = elements.siteSearch.value.trim().toLowerCase();
+    const domains = [...byDomain.values()].filter(site => site.domain.toLowerCase().includes(filter))
+        .sort((a, b) => a.domain.localeCompare(b.domain));
+    elements.domainSettingRows.replaceChildren();
+    elements.settingsEmpty.hidden = domains.length > 0;
+
+    for (const site of domains) {
+        const row = document.createElement('tr');
+        const domain = document.createElement('td');
+        domain.textContent = site.domain;
+
+        const categoryCell = document.createElement('td');
+        const category = document.createElement('select');
+        category.setAttribute('aria-label', `Category override for ${site.domain}`);
+        const automatic = document.createElement('option');
+        automatic.value = '';
+        automatic.textContent = 'Automatic';
+        category.append(automatic);
+        for (const label of ['STUDY', 'WORK', 'ENTERTAINMENT', 'SOCIAL', 'OTHER']) {
+            const option = document.createElement('option');
+            option.value = label;
+            option.textContent = label[0] + label.slice(1).toLowerCase();
+            category.append(option);
+        }
+        category.value = site.preference?.categoryOverride || '';
+        categoryCell.append(category);
+
+        const excludedCell = document.createElement('td');
+        const excludeLabel = document.createElement('label');
+        excludeLabel.className = 'exclude-control';
+        const excluded = document.createElement('input');
+        excluded.type = 'checkbox';
+        excluded.checked = Boolean(site.preference?.excluded);
+        excluded.setAttribute('aria-label', `Exclude ${site.domain} and delete its stored sessions`);
+        excludeLabel.append(excluded, document.createTextNode('Exclude'));
+        excludedCell.append(excludeLabel);
+
+        const actions = document.createElement('td');
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.textContent = 'Save';
+        save.addEventListener('click', () => void saveDomainPreference(site, category.value || null, excluded.checked, save));
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'reset-setting';
+        reset.textContent = 'Reset';
+        reset.disabled = !site.preference;
+        reset.setAttribute('aria-label', `Reset category override and tracking exclusion for ${site.domain}`);
+        reset.addEventListener('click', () => void resetDomainPreference(site.domain, reset));
+        actions.append(save, reset);
+
+        row.append(domain, categoryCell, excludedCell, actions);
+        elements.domainSettingRows.append(row);
+    }
+}
+
+async function saveDomainPreference(site, categoryOverride, excluded, button) {
+    if (excluded && !site.preference?.excluded) {
+        const confirmed = window.confirm(`Exclude ${site.domain}? This deletes its stored browsing sessions and stops future tracking for this domain.`);
+        if (!confirmed) return;
+    }
+    button.disabled = true;
+    try {
+        const response = await fetch(makeApiUrl('/device-domains', {}), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ deviceId: currentDeviceId, domain: site.domain, excluded, categoryOverride })
+        });
+        if (!response.ok) throw new Error(`Could not save site controls (${response.status}): ${await response.text()}`);
+        const saved = await response.json();
+        currentPreferences = [...currentPreferences.filter(item => item.domain !== saved.domain), saved];
+        setStatus(`Saved controls for ${site.domain}.`);
+        await refreshDashboard(currentDeviceId);
+    } catch (error) {
+        console.error('Could not save site controls:', error);
+        setStatus(error.message || 'Could not save site controls.', true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function resetDomainPreference(domain, button) {
+    if (!window.confirm(`Reset the category override and allow tracking for ${domain} again? Previously deleted sessions cannot be restored.`)) return;
+    button.disabled = true;
+    try {
+        const url = makeApiUrl('/device-domains', { deviceId: currentDeviceId, domain });
+        const response = await fetch(url, { method: 'DELETE' });
+        if (!response.ok) throw new Error(`Could not reset site controls (${response.status}): ${await response.text()}`);
+        currentPreferences = currentPreferences.filter(item => item.domain !== domain);
+        await refreshDashboard(currentDeviceId);
+        setStatus(`Reset controls for ${domain}.`);
+    } catch (error) {
+        console.error('Could not reset site controls:', error);
+        setStatus(error.message || 'Could not reset site controls.', true);
+    } finally {
+        button.disabled = false;
+    }
 }
 
 function renderRecentSessions(sessions) {
@@ -305,10 +407,12 @@ async function refreshDashboard(deviceId) {
     setStatus('Loading saved activity…');
 
     try {
-        const sessions = await loadSessions(deviceId, range);
-        if (classifier === 'llm' && sessions.length) {
-            const pairs = new Set(sessions.map(session => `${session.domain}\u0000${session.pageTitle || ''}`)).size;
-            const confirmed = window.confirm(`Gemini will classify up to ${pairs} distinct domain and page title pairs in this range. Cached classifications may reduce API calls. Continue?`);
+        const [overview, preferences] = await Promise.all([
+            loadOverview(deviceId, range),
+            loadDomainPreferences(deviceId)
+        ]);
+        if (classifier === 'llm' && overview.classificationPairCount) {
+            const confirmed = window.confirm(`Gemini may classify up to ${overview.classificationPairCount} distinct domain and page title pairs in this range. Cached classifications can reduce API calls. Continue?`);
             if (!confirmed) {
                 setStatus('Gemini analysis cancelled. Choose Rules or update the range to continue.');
                 return;
@@ -316,10 +420,11 @@ async function refreshDashboard(deviceId) {
         }
         setStatus('Calculating category totals…');
         const analysis = await loadCategoryTotals(deviceId, range, classifier);
-        const aggregate = aggregateSessions(sessions);
-        renderMetrics(sessions, aggregate, range);
+        currentOverview = overview;
+        currentPreferences = preferences;
+        renderMetrics(overview, range);
         renderCategories(analysis, classifier);
-        setStatus(sessions.length ? `${sessions.length.toLocaleString()} sessions loaded.` : 'No saved sessions in this date range.');
+        setStatus(overview.totalSeconds ? `${overview.siteCount.toLocaleString()} sites and ${overview.activeDays} active days loaded.` : 'No saved sessions in this date range.');
     } catch (error) {
         console.error('Dashboard update failed:', error);
         setStatus(error.message || 'Could not load activity. Check that the backend is running.', true);
@@ -340,13 +445,20 @@ function setPreset(days) {
 }
 
 function initializeDashboard() {
-    const deviceId = new URLSearchParams(window.location.search).get('deviceId');
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const deviceId = hashParams.get('deviceId')
+        || new URLSearchParams(window.location.search).get('deviceId')
+        || sessionStorage.getItem('deviceId');
     if (!deviceId) {
         elements.missingDevice.hidden = false;
         return;
     }
 
+    currentDeviceId = deviceId;
+    sessionStorage.setItem('deviceId', deviceId);
+    history.replaceState(null, '', window.location.pathname);
     elements.dashboard.hidden = false;
+    elements.exportButton.href = `/api/export/${encodeURIComponent(deviceId)}.csv`;
     setPreset(7);
     elements.form.addEventListener('submit', event => {
         event.preventDefault();
@@ -358,6 +470,31 @@ function initializeDashboard() {
             setPreset(Number(button.dataset.days));
             void refreshDashboard(deviceId);
         });
+    });
+    elements.siteSearch.addEventListener('input', () => {
+        if (currentOverview) renderDomainSettings(currentOverview.siteTotals, currentPreferences);
+    });
+    elements.deleteRangeButton.addEventListener('click', async () => {
+        const range = getRange();
+        const label = `${formatDate(range.start)} – ${formatDate(range.end)}`;
+        if (!window.confirm(`Delete all browsing sessions and reminder events from ${label}? This cannot be undone.`)) return;
+        elements.deleteRangeButton.disabled = true;
+        try {
+            const response = await fetch(makeApiUrl('/sessions', {
+                deviceId,
+                from: range.start.toISOString(),
+                to: range.end.toISOString()
+            }), { method: 'DELETE' });
+            if (!response.ok) throw new Error(`Delete failed (${response.status}): ${await response.text()}`);
+            const deleted = await response.json();
+            await refreshDashboard(deviceId);
+            setStatus(`Deleted ${deleted.sessions} sessions and ${deleted.reminderEvents} reminder events.`);
+        } catch (error) {
+            console.error('Could not delete selected data:', error);
+            setStatus(error.message || 'Could not delete selected data.', true);
+        } finally {
+            elements.deleteRangeButton.disabled = false;
+        }
     });
     void refreshDashboard(deviceId);
 }

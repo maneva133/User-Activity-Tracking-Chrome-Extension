@@ -1,51 +1,45 @@
 # User Activity Tracking Chrome Extension
 
-This repository contains a Chrome extension and Spring Boot backend for tracking website usage. The extension records time by domain, and its popup displays daily, weekly, and monthly totals with a Chart.js summary. The backend can analyze usage with Google Gemini.
+This project contains a Chrome Manifest V3 extension, a Spring Boot 3.5 / Java 21 backend, and PostgreSQL. The extension records active tab sessions and reminder events. The backend stores them, summarizes usage, and classifies site and page-title pairs with rules or Gemini.
 
-## Requirements
+## Setup
 
-- Google Chrome
-- Docker Desktop with Docker Compose
-- A Gemini API key for AI analysis
+Requirements: Google Chrome, Docker Desktop with Compose, and (for Gemini or Python evaluation) a Gemini API key and Python 3.10+.
 
-## Run the backend and database
+1. In `user-tracking-extension-backend`, copy `.env.example` to `.env` and optionally set `GEMINI_API_KEY`. Do not commit `.env`.
+2. From that directory run `docker compose up --build`.
+3. In Chrome, open `chrome://extensions/`, enable Developer mode, choose **Load unpacked**, and select `user-tracking-extension`.
+4. Visit a few websites with the backend running. Open the extension popup and click **Open full dashboard**.
 
-From `user-tracking-extension-backend`, start PostgreSQL and the Spring backend with:
+The dashboard is served at `http://localhost:8080/dashboard/index.html`. Compose ports bind to loopback (`127.0.0.1`) for local use. PostgreSQL data is retained in the `user-tracking-extension-backend_pgdata` named volume. Stop with Ctrl+C or `docker compose down`; `docker compose down -v` also deletes the database volume.
 
-```bash
-docker compose up --build
-```
+## What is implemented
 
-The backend listens on `http://localhost:8080`; PostgreSQL listens on port `1234`. Database files persist in a named Docker volume when containers are stopped or recreated. To stop the services, press Ctrl+C and run `docker compose down`.
+- The extension background service worker measures active website time, queues sessions while the backend is offline, and records reminder events. Browser-internal pages are skipped.
+- The popup shows per-domain daily, weekly, and monthly time, a chart, reminder controls, and rule/Gemini category analysis.
+- The dashboard shows totals, daily trends, category totals, top sites, recent sessions, and site controls for a selected 7/30/90-day or custom range. Its summary view uses grouped database queries and fetches only the latest 20 session details.
+- Site controls can set a category override or exclude a domain for this extension device. Excluding a domain deletes its saved sessions and blocks future session writes. This cannot restore deleted history.
+- The dashboard can export all sessions as CSV or delete sessions and reminder events in a selected date range.
+- Category rules come from `user-tracking-extension-backend/src/main/resources/categories.json`. Gemini classifies one domain/title pair into STUDY, WORK, ENTERTAINMENT, SOCIAL, or OTHER. Results are cached in PostgreSQL; failures fall back to OTHER.
+- Legacy `/api/tracking` endpoints and data remain in the backend for compatibility. The current extension uses `/api/sessions` and `/api/reminders`.
 
-The default database credentials are for local development. To set your own, copy `user-tracking-extension-backend/.env.example` to `.env` in that folder and edit the values. Set `GEMINI_API_KEY` there to enable AI analysis. Do not commit `.env`.
+The backend currently identifies an extension installation with a local device ID; it does not provide user accounts or authentication. Keep it on your own computer. Loopback binding is not a substitute for authentication if you later host the service for multiple users.
 
-## Load the extension
+## Classifier evaluation page
 
-1. Open `chrome://extensions/` and enable Developer mode.
-2. Choose **Load unpacked** and select the `user-tracking-extension` directory.
-3. Keep the backend running at `http://localhost:8080`, which is the URL used by the extension.
+Create a CSV with columns `domain,title,true_category`, where true_category is one of the five supported category names. In the dashboard, open **Classifier evaluation**, choose the file, and run the evaluation. It reports accuracy, per-class precision/recall/F1, confusion matrices, average Gemini latency, reported API call count, and consistency across three Gemini runs. The page confirms before sending up to three uncached Gemini requests per row. Predictions can be downloaded as CSV. Rules evaluation works without Gemini; Gemini may return OTHER if its API is not configured.
 
-## Open the analytics dashboard
+The command-line evaluator is also available. Install `evaluation/requirements.txt`, start the backend, and run `python evaluation/classification_eval.py`. It reads `evaluation/labeled_sites.csv` and saves `evaluation/classification_confusion_matrix.png`. Use `--predictions` to load saved classifier outputs instead of calling the backend.
 
-With the backend running and the extension loaded in Chrome, open the extension popup and choose **Open full dashboard**. The popup passes the extension's device ID to the local dashboard at `http://localhost:8080/dashboard/index.html`. The dashboard shows tracked time, daily averages, active days, category totals, top domains, daily trends, and recent sessions for a selected date range. Rules are the default classifier; selecting Gemini asks for confirmation because it may send each distinct domain and page title in the range to the Gemini API.
+## API overview
 
-## Current functionality
+- `GET /api/sessions` reads raw sessions for a device and date range.
+- `GET /api/sessions/overview` returns database-aggregated dashboard totals.
+- `GET /api/sessions/analyze?classifier=rules|llm` returns category totals (summed in Java).
+- `GET /api/classify?domain=example.com&title=...&classifier=rules|llm` classifies a single site/title pair.
+- `GET/PUT/DELETE /api/device-domains` reads or changes per-device category overrides and exclusions.
+- `GET /api/export/{deviceId}.csv` exports sessions; `DELETE /api/sessions` deletes sessions and reminders for a device and range.
 
-- Tracks active website time and saves totals through the `/api/tracking` endpoints.
-- Displays per-site daily, weekly, and monthly totals in the popup.
-- Shows a chart of site usage and offers Gemini-based usage analysis.
+## Development checks
 
-The backend also stores activity sessions and reminder events. The extension records activity sessions and supports configurable break reminders.
-
-## Website classification
-
-The backend classifies a site with `GET /api/classify?domain=example.com&title=Page%20title&classifier=rules` or `classifier=llm`. The rule classifier reads `user-tracking-extension-backend/src/main/resources/categories.json`; the LLM classifier uses Gemini and stores domain/title-hash predictions in PostgreSQL. LLM cache can be bypassed with `useCache=false`. The popup sends today's saved sessions to `GET /api/sessions/analyze`; the backend classifies and sums session seconds in Java for either classifier.
-
-To evaluate both classifiers, create `evaluation/labeled_sites.csv` with columns `domain,title,true_category` and install `evaluation/requirements.txt`. Start the backend, then run `python evaluation/classification_eval.py`. It compares the rule classifier with three fresh LLM runs, prints per-class reports and run-to-run consistency, average latency and API-call counts, and writes `evaluation/classification_confusion_matrix.png`. A saved prediction CSV can be supplied with `--predictions`; it must match the input rows and include `rules_prediction` plus `llm_prediction_1`, `llm_prediction_2`, and `llm_prediction_3` columns. Optional latency and call-count columns are `rules_latency_ms`, `rules_api_calls`, `llm_latency_ms_1..3`, and `llm_api_calls_1..3`.
-
-## Gemini configuration
-
-Set `GEMINI_API_KEY` in the backend `.env` file to enable AI analysis. When running outside Docker, configure the matching `gemini.api.key` property. The model defaults to `gemini-1.5-flash` and can be changed with `gemini.model`.
-
-Keep `application.properties` and API keys out of version control.
+Backend tests are in `user-tracking-extension-backend/src/test`. The extension reminder checks are in `user-tracking-extension/reminders.test.js`. Run backend checks from `user-tracking-extension-backend` with `mvn test`; run extension checks with `node user-tracking-extension/reminders.test.js` from the repository root.

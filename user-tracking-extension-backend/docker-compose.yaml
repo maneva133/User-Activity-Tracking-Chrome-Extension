@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-user_tracking}
       POSTGRES_DB: ${POSTGRES_DB:-user_tracking}
     ports:
-      - "${POSTGRES_PORT:-1234}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-1234}:5432"
     volumes:
       - user-tracking-extension-backend_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -32,7 +32,7 @@ services:
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
 
 volumes:
   user-tracking-extension-backend_pgdata:

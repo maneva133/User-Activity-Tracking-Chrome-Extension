@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Classifier evaluation | Focus</title>
+    <link rel="stylesheet" href="/dashboard/style.css">
+    <script src="/dashboard/evaluation.js" defer></script>
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/dashboard/index.html"><span class="brand-mark" aria-hidden="true">F</span><span>Focus<span class="brand-muted"> / Evaluation</span></span></a>
+        <nav class="topnav" aria-label="Dashboard pages">
+            <a href="/dashboard/index.html">Usage</a>
+            <a href="/dashboard/evaluation.html" aria-current="page">Classifier evaluation</a>
+        </nav>
+        <p class="local-badge"><span aria-hidden="true"></span> Local dashboard</p>
+    </header>
+    <main class="page-shell evaluation-shell">
+        <section class="page-heading">
+            <div><p class="eyebrow">Compare labels against predictions</p><h1>Classifier evaluation</h1><p class="subtitle">Upload a labeled CSV to compare the rules and Gemini classifiers on the same sites.</p></div>
+        </section>
+        <section class="panel eval-input" aria-labelledby="inputHeading">
+            <h2 id="inputHeading">Labeled examples</h2>
+            <p>CSV columns: <code>domain,title,true_category</code>. Categories: STUDY, WORK, ENTERTAINMENT, SOCIAL, OTHER.</p>
+            <label class="file-picker" for="csvFile">Choose labeled_sites.csv<input id="csvFile" type="file" accept=".csv,text/csv"></label>
+            <p id="fileSummary" class="helper-note">No file selected.</p>
+            <button id="runEvaluation" class="button button-primary" type="button" disabled>Run evaluation</button>
+            <p id="evalStatus" class="status" role="status" aria-live="polite"></p>
+            <p class="helper-note">Gemini runs three times per row with cache bypassed. The page asks before sending site domains and titles to Gemini. Rules and saved predictions work without an API key.</p>
+        </section>
+        <div id="evalResults" hidden>
+            <section id="metricCards" class="metric-grid" aria-label="Evaluation summary"></section>
+            <div class="eval-grid">
+                <section class="panel" aria-labelledby="classMetricsHeading"><h2 id="classMetricsHeading">Rules per-class metrics</h2><div id="rulesReport"></div></section>
+                <section class="panel" aria-labelledby="llmMetricsHeading"><h2 id="llmMetricsHeading">Gemini per-class metrics</h2><div id="llmReport"></div></section>
+                <section class="panel" aria-labelledby="rulesMatrixHeading"><h2 id="rulesMatrixHeading">Rules confusion matrix</h2><div id="rulesMatrix" class="matrix-scroll"></div></section>
+                <section class="panel" aria-labelledby="llmMatrixHeading"><h2 id="llmMatrixHeading">Gemini confusion matrix</h2><div id="llmMatrix" class="matrix-scroll"></div></section>
+            </div>
+            <section class="panel consistency-panel"><h2>Gemini consistency across three runs</h2><p id="consistencySummary"></p><a id="downloadPredictions" class="button button-secondary" download="classification_predictions.csv">Download predictions CSV</a></section>
+        </div>
+    </main>
+</body>
+</html>

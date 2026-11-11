@@ -244,6 +244,10 @@ async function analyzeUsage() {
         const deviceId = usageDeviceId;
         if (!deviceId) throw new Error('No device ID found. Close and reopen the popup.');
         const classifier = document.getElementById('analysisClassifier').value;
+        if (classifier === 'llm' && !window.confirm('Gemini will receive the domain and page titles for today’s browsing activity. Continue?')) {
+            setStatus('Gemini analysis cancelled.');
+            return;
+        }
         const ranges = getUsageRanges();
         const url = new URL(`${API_BASE}/sessions/analyze`);
         url.searchParams.set('deviceId', deviceId);
@@ -284,7 +288,7 @@ document.getElementById('openDashboardBtn').addEventListener('click', async () =
         const { deviceId } = await chrome.storage.local.get('deviceId');
         if (!deviceId) throw new Error('No device ID found. Close and reopen the popup.');
         const dashboardUrl = new URL('http://localhost:8080/dashboard/index.html');
-        dashboardUrl.searchParams.set('deviceId', deviceId);
+        dashboardUrl.hash = new URLSearchParams({ deviceId }).toString();
         await chrome.tabs.create({ url: dashboardUrl.toString() });
     } catch (error) {
         console.error('Could not open dashboard:', error);

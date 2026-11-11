@@ -14,6 +14,10 @@
             <span class="brand-mark" aria-hidden="true">F</span>
             <span>Focus<span class="brand-muted"> / Activity</span></span>
         </a>
+        <nav class="topnav" aria-label="Dashboard pages">
+            <a href="/dashboard/index.html" aria-current="page">Usage</a>
+            <a href="/dashboard/evaluation.html">Classifier evaluation</a>
+        </nav>
         <p class="local-badge"><span aria-hidden="true"></span> Local dashboard</p>
     </header>
 
@@ -52,6 +56,11 @@
                 <button type="button" data-days="30" aria-pressed="false">Last 30 days</button>
                 <button type="button" data-days="90" aria-pressed="false">Last 90 days</button>
             </nav>
+
+            <div class="data-actions">
+                <a id="exportButton" class="button button-secondary" href="#">Export all sessions as CSV</a>
+                <button id="deleteRangeButton" class="button button-danger" type="button">Delete selected range</button>
+            </div>
 
             <p id="status" class="status" role="status" aria-live="polite"></p>
 
@@ -120,6 +129,26 @@
                         </table>
                     </div>
                     <p id="sessionsEmpty" class="empty-message" hidden>No sessions to show yet.</p>
+                </article>
+
+                <article class="panel preferences-panel" aria-labelledby="preferencesHeading">
+                    <div class="panel-heading">
+                        <div><p class="eyebrow">Personalize and protect your data</p><h2 id="preferencesHeading">Site controls</h2></div>
+                        <span class="panel-unit">Per device</span>
+                    </div>
+                    <p class="panel-description">A category override replaces both automatic classifiers. Excluding a site deletes its stored sessions and stops future tracking.</p>
+                    <search class="setting-search">
+                        <label for="siteSearch">Find a domain</label>
+                        <input id="siteSearch" type="search" placeholder="Search sites">
+                    </search>
+                    <div class="table-scroll settings-table-scroll">
+                        <table>
+                            <caption class="visually-hidden">Category overrides and tracking exclusions by domain</caption>
+                            <thead><tr><th scope="col">Domain</th><th scope="col">Category override</th><th scope="col">Exclude</th><th scope="col">Action</th></tr></thead>
+                            <tbody id="domainSettingRows"></tbody>
+                        </table>
+                    </div>
+                    <p id="settingsEmpty" class="empty-message" hidden>No domains in this range. Browse a site to add its controls.</p>
                 </article>
             </section>
         </div>
